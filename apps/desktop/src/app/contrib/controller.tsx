@@ -87,7 +87,6 @@ import { AppContextMenu } from '../context-menu/app-context-menu'
 import { HudShell } from '../hud/hud-shell'
 import { $terminalTakeover, setTerminalTakeover } from '../right-sidebar/store'
 import { $workspaceIsPage } from '../routes'
-import { ensureWorkspaceShellTabOrder, WORKSPACE_SHELL_PANE_ID, workspaceShellContributions } from '../workspace-shell'
 
 import { FilesPane, LogsPane, ReviewPaneContent } from './panes'
 import { ContribWiring, WiredPane } from './wiring'
@@ -152,7 +151,6 @@ const workspaceTabDrag = (event: ReactPointerEvent<HTMLElement>, onTap: () => vo
 }
 
 registry.registerMany([
-  ...workspaceShellContributions,
   {
     id: 'sessions',
     area: 'panes',
@@ -380,7 +378,7 @@ registry.registerMany([
 const DEFAULT_TREE = split(
   'row',
   [
-    group([WORKSPACE_SHELL_PANE_ID, 'sessions'], { active: 'sessions', id: 'grp-sessions' }),
+    group(['sessions'], { id: 'grp-sessions' }),
     group(['workspace'], { id: 'grp-main' }),
     split(
       'column',
@@ -401,27 +399,12 @@ const DEFAULT_TREE = split(
   'spl-root'
 )
 
-const FOCUS_TREE = split(
-  'row',
-  [
-    group([WORKSPACE_SHELL_PANE_ID, 'sessions'], { active: 'sessions' }),
-    group(['workspace', 'files', 'review', 'terminal'])
-  ],
-  [1, 4.6]
-)
+const FOCUS_TREE = split('row', [group(['sessions']), group(['workspace', 'files', 'review', 'terminal'])], [1, 4.6])
 
 const TERMINAL_TREE = split(
   'column',
   [
-    split(
-      'row',
-      [
-        group([WORKSPACE_SHELL_PANE_ID, 'sessions'], { active: 'sessions' }),
-        group(['workspace']),
-        group(['files', 'review'])
-      ],
-      [1, 3.2, 1.2]
-    ),
+    split('row', [group(['sessions']), group(['workspace']), group(['files', 'review'])], [1, 3.2, 1.2]),
     group(['terminal'])
   ],
   [3, 1]
@@ -430,11 +413,7 @@ const TERMINAL_TREE = split(
 const QUAD_TREE = split(
   'column',
   [
-    split(
-      'row',
-      [group([WORKSPACE_SHELL_PANE_ID, 'sessions', 'files'], { active: 'sessions' }), group(['workspace'])],
-      [1, 3]
-    ),
+    split('row', [group(['sessions', 'files']), group(['workspace'])], [1, 3]),
     split('row', [group(['terminal']), group(['review'])], [1.4, 1])
   ],
   [3, 1]
@@ -457,7 +436,6 @@ discoverBundledPlugins()
 // Plugin panes join the tree by their `placement` hint the moment they
 // register — incl. runtime plugins arriving seconds after boot.
 watchContributedPanes()
-ensureWorkspaceShellTabOrder()
 
 // Session + route (page) tiles: persisted splits register panes docked beside
 // main.
