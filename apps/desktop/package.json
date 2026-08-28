@@ -118,7 +118,7 @@
     "clsx": "2.1.1",
     "cmdk": "1.1.1",
     "d3-force": "3.0.0",
-    "dnd-core": "14.1.0",
+    "dnd-core": "14.0.1",
     "dompurify": "3.4.13",
     "driver.js": "1.8.0",
     "emojibase-data": "16.0.3",
@@ -149,7 +149,7 @@
     "tw-shimmer": "0.4.12",
     "unicode-animations": "1.0.3",
     "unified": "11.0.5",
-    "unist-util-visit-parents": "2.0.2",
+    "unist-util-visit-parents": "6.0.2",
     "use-stick-to-bottom": "1.1.6",
     "vfile": "6.0.3",
     "web-haptics": "0.0.6"
