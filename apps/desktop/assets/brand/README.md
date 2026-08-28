@@ -24,3 +24,6 @@ Packaging aliases:
 - `../icon.ico`: Windows multi-resolution icon (16–256 px);
 - `../icon.icns`: macOS icon family;
 - `../../public/apple-touch-icon.png`: renderer / notification icon.
+- `mousai-workspace-shortcut-v1.ico`: versioned Windows shortcut icon. The
+  distinct filename prevents Explorer from reusing the old executable-icon
+  cache after a branding update.
