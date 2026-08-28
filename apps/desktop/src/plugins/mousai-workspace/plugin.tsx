@@ -27,15 +27,15 @@ function navigateWorkspace(path: string) {
 
 function WorkspaceNavPane() {
   return (
-    <div className="flex h-full min-h-0 flex-col bg-(--ui-bg-sidebar)">
-      <div className="border-b border-(--ui-border-subtle) px-3 py-3">
+    <div className="flex h-full min-h-0 flex-col bg-(--ui-sidebar-surface-background)">
+      <div className="border-b border-(--ui-stroke-quaternary) px-3 py-3">
         <div className="text-[0.6875rem] font-medium tracking-[0.16em] text-(--ui-text-quaternary)">MOUSAI WORKSPACE</div>
       </div>
 
       <nav aria-label="Workspace" className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto p-2">
         {WORKSPACE_SECTIONS.map(section => (
           <button
-            className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-[0.8125rem] text-(--ui-text-secondary) transition-colors hover:bg-(--chrome-action-hover) hover:text-foreground"
+            className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-[0.8125rem] text-(--ui-text-secondary) transition-colors hover:bg-(--ui-hover-overlay) hover:text-foreground"
             key={section.id}
             onClick={() => navigateWorkspace(section.path)}
             type="button"
@@ -51,7 +51,7 @@ function WorkspaceNavPane() {
 
 function WorkspacePage({ title, eyebrow, children }: { title: string; eyebrow?: string; children: ReactNode }) {
   return (
-    <main className="h-full min-h-0 overflow-y-auto bg-(--ui-bg-primary) px-6 pb-10 pt-14 text-foreground">
+    <main className="h-full min-h-0 overflow-y-auto bg-(--ui-editor-surface-background) px-6 pb-10 pt-14 text-foreground">
       <div className="mx-auto w-full max-w-6xl">
         {eyebrow && (
           <div className="mb-2 text-[0.6875rem] font-medium tracking-[0.16em] text-(--ui-text-quaternary)">{eyebrow}</div>
@@ -65,7 +65,7 @@ function WorkspacePage({ title, eyebrow, children }: { title: string; eyebrow?: 
 
 function EmptyPanel({ title, copy }: { title: string; copy: string }) {
   return (
-    <section className="rounded-lg border border-(--ui-border-subtle) bg-(--ui-bg-secondary) p-4">
+    <section className="rounded-lg border border-(--ui-stroke-quaternary) bg-(--ui-sidebar-surface-background) p-4">
       <h2 className="text-sm font-medium">{title}</h2>
       <p className="mt-2 text-xs leading-5 text-(--ui-text-tertiary)">{copy}</p>
     </section>
@@ -143,7 +143,7 @@ const plugin: HermesPlugin = {
           collapsible: true,
           showCloseButton: false,
           hideOnly: true,
-          dock: { pane: 'sessions', pos: 'center', enforce: true }
+          dock: { pane: 'sessions', pos: 'center', before: 'sessions', enforce: true }
         },
         render: () => <WorkspaceNavPane />
       },
