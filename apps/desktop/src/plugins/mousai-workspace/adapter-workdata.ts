@@ -237,6 +237,7 @@ function adaptTasks(payload: unknown, issues: AdapterIssue[]): Task[] {
 
     tasks.push({
       id,
+      revision: asTrimmedText(candidate.revision),
       title,
       typeLabel: asTrimmedText(fields['类型']),
       projectRef: asTrimmedText(fields['所属项目']),

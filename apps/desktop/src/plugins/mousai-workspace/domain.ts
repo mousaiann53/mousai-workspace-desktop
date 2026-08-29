@@ -79,6 +79,7 @@ export type WorkBridgeState =
 
 export interface Task {
   readonly id: string
+  readonly revision: string | null
   readonly title: string
   readonly typeLabel: string | null
   readonly projectRef: string | null

@@ -1,5 +1,12 @@
 import type { PluginRestOptions } from '@hermes/plugin-sdk'
 
+import {
+  type TaskEditChanges,
+  type TaskMutationMeta,
+  type TaskMutationResult,
+  WorkspaceTaskMutationError,
+  type WorkspaceTaskMutationTransport
+} from './service-task-mutation'
 import type { RawWorkspaceReadSnapshot, WorkspaceReadTransport } from './service-workspace-read'
 
 export const WORKSPACE_SNAPSHOT_SCHEMA_VERSION = 'mousai.workspace.snapshot.v1'
@@ -64,6 +71,53 @@ function abortError(): Error {
   return new DOMException('Workspace snapshot request was aborted.', 'AbortError')
 }
 
+function parseMutationResult(value: unknown): TaskMutationResult {
+  if (!isRecord(value)) {
+    throw new WorkspaceTaskMutationError('Task mutation response is invalid.', null, 'invalid_response')
+  }
+
+  const action = value.action
+  const changed = value.changed
+
+  if (
+    value.success !== true ||
+    typeof value.workId !== 'string' ||
+    !['complete', 'defer', 'edit'].includes(String(action)) ||
+    typeof value.idempotent !== 'boolean' ||
+    typeof value.newRevision !== 'string' ||
+    !/^[0-9a-f]{64}$/.test(value.newRevision) ||
+    !isRecord(changed)
+  ) {
+    throw new WorkspaceTaskMutationError('Task mutation response is invalid.', null, 'invalid_response')
+  }
+
+  return {
+    workId: value.workId,
+    action: action as TaskMutationResult['action'],
+    success: true,
+    idempotent: value.idempotent,
+    newRevision: value.newRevision,
+    changed
+  }
+}
+
+function mutationFailure(error: unknown): WorkspaceTaskMutationError {
+  if (error instanceof WorkspaceTaskMutationError) {
+    return error
+  }
+
+  const statusCode =
+    typeof error === 'object' && error !== null && typeof (error as { statusCode?: unknown }).statusCode === 'number'
+      ? (error as { statusCode: number }).statusCode
+      : null
+
+  const message = error instanceof Error ? error.message : 'Task mutation failed.'
+  const codeMatch = message.match(/"code"\s*:\s*"([a-z0-9_]+)"/i)
+  const code = codeMatch?.[1] ?? (statusCode === 409 ? 'conflict' : 'mutation_failed')
+
+  return new WorkspaceTaskMutationError(message, statusCode, code)
+}
+
 /**
  * The production Workspace read door. `rest` is the official PluginContext
  * namespace: the renderer supplies neither an endpoint nor a credential, and
@@ -72,8 +126,16 @@ function abortError(): Error {
 export function createPluginWorkspaceReadTransport(
   rest: PluginRest,
   options: { readonly timeoutMs?: number } = {}
-): WorkspaceReadTransport {
+): WorkspaceReadTransport & WorkspaceTaskMutationTransport {
   const timeoutMs = options.timeoutMs ?? WORKSPACE_SNAPSHOT_TIMEOUT_MS
+
+  async function mutate(path: string, method: 'PATCH' | 'POST', body: unknown): Promise<TaskMutationResult> {
+    try {
+      return parseMutationResult(await rest<unknown>(path, { method, body, timeoutMs }))
+    } catch (error) {
+      throw mutationFailure(error)
+    }
+  }
 
   return Object.freeze({
     scope: `gateway:plugin:mousai-workspace:${WORKSPACE_SNAPSHOT_SCHEMA_VERSION}`,
@@ -101,6 +163,15 @@ export function createPluginWorkspaceReadTransport(
         manifests: envelope.deliverables,
         loadedAt: envelope.generatedAt
       }
+    },
+    editTask(workId: string, request: TaskMutationMeta & { readonly changes: TaskEditChanges }) {
+      return mutate(`/tasks/${encodeURIComponent(workId)}`, 'PATCH', request)
+    },
+    deferTask(workId: string, request: TaskMutationMeta & { readonly deadline: string }) {
+      return mutate(`/tasks/${encodeURIComponent(workId)}/defer`, 'POST', request)
+    },
+    completeTask(workId: string, request: TaskMutationMeta) {
+      return mutate(`/tasks/${encodeURIComponent(workId)}/complete`, 'POST', request)
     }
   })
 }
