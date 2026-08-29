@@ -172,6 +172,7 @@ export function ProductionReviewCard({
         <ReviewFact label="需要决策">{decisionValue(review)}</ReviewFact>
         <ReviewFact label="WorkBridge 状态">{WORKBRIDGE_LABELS[task.workBridgeState]}</ReviewFact>
         <ReviewFact label="Approved Scope version">{scopeVersion}</ReviewFact>
+        <ReviewFact label="Approved Scope items">{listValue(review?.approvedScope?.items ?? null)}</ReviewFact>
         <ReviewFact label="Scope 历史">
           {review ? `${review.scopeHistory.length} 个版本` : '未设置 / 等待输入'}
         </ReviewFact>

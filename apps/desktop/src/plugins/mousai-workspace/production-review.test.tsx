@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { Deliverable, ProductionGateState, ProductionReview, Project, Task } from './domain'
@@ -105,7 +105,7 @@ function review(overrides: Partial<ProductionReview> = {}): ProductionReview {
     authority: 'workbridge',
     gateState: 'WAITING_ACCEPTANCE',
     missingInformation: [],
-    decisionRequired: true,
+    decisionRequired: false,
     approvedScope,
     scopeHistory: [approvedScope],
     revision: 2,
@@ -113,7 +113,7 @@ function review(overrides: Partial<ProductionReview> = {}): ProductionReview {
     acceptance: null,
     bundleMeta: {
       missingInformation: [],
-      decisionRequired: true,
+      decisionRequired: false,
       inputSources: ['source-001'],
       outputRequirements: { formats: ['pdf'] },
       acceptanceCriteria: ['人工验收'],
@@ -173,6 +173,7 @@ describe('Production Review presentation', () => {
       '需要决策',
       'WorkBridge 状态',
       'Approved Scope version',
+      'Approved Scope items',
       'Scope 历史',
       'Mousai 验收意见',
       'Revision',
@@ -188,7 +189,8 @@ describe('Production Review presentation', () => {
     expect(screen.getByText('等待验收（WAITING_ACCEPTANCE）')).toBeTruthy()
     expect(screen.getByText('WorkBridge')).toBeTruthy()
     expect(screen.getByText('v3')).toBeTruthy()
-    expect(screen.getAllByText('需要决策')).toHaveLength(2)
+    expect(screen.getByText('正式交付物')).toBeTruthy()
+    expect(screen.getByText('需要决策').parentElement?.textContent).toContain('无')
     expect(screen.getByText('版式通过')).toBeTruthy()
     expect(screen.getByText('r2')).toBeTruthy()
     expect(screen.getByText('已提交')).toBeTruthy()
@@ -213,11 +215,19 @@ describe('Production Review presentation', () => {
   })
 
   it('requires a separate human confirmation before approving scope and never auto-starts', () => {
-    const waiting = review({ gateState: 'WAITING_HUMAN_APPROVAL' })
+    const waiting = review({
+      gateState: 'WAITING_HUMAN_APPROVAL',
+      approvedScope: null,
+      scopeHistory: [],
+      revision: null,
+      manifestVersion: null
+    })
+
     const [item] = buildProductionReviewItems(project, [task], [], [waiting])
 
     render(card(item))
 
+    expect(screen.getByText('等待人工批准（WAITING_HUMAN_APPROVAL）')).toBeTruthy()
     expect((screen.getByRole('button', { name: '批准范围' }) as HTMLButtonElement).disabled).toBe(false)
     expect((screen.getByRole('button', { name: '开始生产' }) as HTMLButtonElement).disabled).toBe(true)
 
@@ -226,10 +236,93 @@ describe('Production Review presentation', () => {
     expect(screen.getByRole('dialog')).toBeTruthy()
     expect(screen.getAllByText(task.id).length).toBeGreaterThanOrEqual(2)
     expect(screen.getByText('WAITING_HUMAN_APPROVAL')).toBeTruthy()
-    expect(screen.getAllByText('v3').length).toBeGreaterThanOrEqual(2)
+    expect(screen.getAllByText('未设置 / 等待输入').length).toBeGreaterThanOrEqual(3)
     expect(screen.getByRole('button', { name: '确认批准范围' })).toBeTruthy()
     expect(actionTransport.approveProductionScope).not.toHaveBeenCalled()
     expect(actionTransport.startProduction).not.toHaveBeenCalled()
+  })
+
+  it('shows approved scope items and version from the canonical read model', () => {
+    const approved = review({ gateState: 'APPROVED_SCOPE', manifestVersion: null })
+    const [item] = buildProductionReviewItems(project, [task], [], [approved])
+
+    render(card(item))
+
+    expect(screen.getByText('Scope 已批准（APPROVED_SCOPE）')).toBeTruthy()
+    expect(screen.getByText('v3')).toBeTruthy()
+    expect(screen.getByText('正式交付物')).toBeTruthy()
+  })
+
+  it('enables revision and acceptance only while waiting for human acceptance', () => {
+    const [item] = buildProductionReviewItems(project, [task], [deliverable], [review()])
+
+    render(card(item))
+
+    expect((screen.getByRole('button', { name: '要求修订' }) as HTMLButtonElement).disabled).toBe(false)
+    expect((screen.getByRole('button', { name: '最终通过' }) as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it.each<ProductionGateState>([
+    'INPUT_REQUIRED',
+    'MATERIAL_MISSING',
+    'DECISION_REQUIRED',
+    'WAITING_HUMAN_APPROVAL',
+    'APPROVED_SCOPE',
+    'READY_FOR_PRODUCTION',
+    'REVISION_REQUIRED',
+    'DELIVERED',
+    'ACCEPTED'
+  ])('keeps revision and acceptance disabled outside WAITING_ACCEPTANCE (%s)', gateState => {
+    const [item] = buildProductionReviewItems(project, [task], [deliverable], [review({ gateState })])
+
+    render(card(item))
+
+    expect((screen.getByRole('button', { name: '要求修订' }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: '最终通过' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('refetches the canonical snapshot after mutation without painting optimistic production facts', async () => {
+    let finishRefresh!: () => void
+    const order: string[] = []
+
+    const accepted = review({
+      gateState: 'ACCEPTED',
+      acceptance: { verdict: 'PASS', reviewerComment: '人工通过' }
+    })
+
+    const transport = {
+      ...actionTransport,
+      acceptProduction: vi.fn(async () => {
+        order.push('server')
+
+        return { action: 'accept' as const, production: accepted }
+      })
+    }
+
+    const onRefresh = vi.fn(
+      () =>
+        new Promise<void>(resolve => {
+          order.push('refresh')
+          finishRefresh = resolve
+        })
+    )
+
+    const [item] = buildProductionReviewItems(project, [task], [deliverable], [review()])
+
+    render(<ProductionReviewCard item={item} onOpenLocal={vi.fn()} onRefresh={onRefresh} transport={transport} />)
+
+    fireEvent.click(screen.getByRole('button', { name: '最终通过' }))
+    fireEvent.click(screen.getByRole('button', { name: '确认最终通过' }))
+
+    await waitFor(() => expect(onRefresh).toHaveBeenCalledTimes(1))
+    expect(order).toEqual(['server', 'refresh'])
+    expect(screen.getByText('等待验收（WAITING_ACCEPTANCE）')).toBeTruthy()
+    expect(screen.queryByText('已验收（ACCEPTED）')).toBeNull()
+
+    await act(async () => finishRefresh())
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(screen.getByText('等待验收（WAITING_ACCEPTANCE）')).toBeTruthy()
+    expect(screen.queryByText('已验收（ACCEPTED）')).toBeNull()
   })
 
   it('shows final version only after canonical acceptance', () => {
