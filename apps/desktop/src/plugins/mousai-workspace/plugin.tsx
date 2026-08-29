@@ -2,6 +2,7 @@ import { Codicon, type HermesPlugin, host, type RouteContribution, ROUTES_AREA, 
 import { type ReactNode } from 'react'
 import { useSearchParams } from 'react-router'
 
+import { Dashboard } from './dashboard'
 import { ProjectDetail } from './project-detail'
 import { ProjectGallery } from './project-gallery'
 import { createLocalDeliverableAccess, type LocalDeliverableAccess } from './service-local-deliverables'
@@ -87,18 +88,12 @@ function EmptyPanel({ title, copy }: { title: string; copy: string }) {
   )
 }
 
-function DashboardPage() {
+function DashboardPage({ transport }: { transport: WorkspaceTransport }) {
+  const gatewayState = useValue(host.state.gateway)
+
   return (
     <WorkspacePage eyebrow="WORKSPACE" title="看板">
-      <div className="grid gap-3 md:grid-cols-2">
-        <EmptyPanel copy="尚未接入 Workspace Domain Adapter。M2-B 不显示演示项目或伪造进度。" title="最近活跃项目" />
-        <EmptyPanel
-          copy="暂无可回读的 Workspace 数据。接入真实项目数据后在这里显示 DDL 与风险。"
-          title="临近 DDL 与风险"
-        />
-        <EmptyPanel copy="任务数据将在后续数据接入阶段回读；当前保持真实空状态。" title="今日 / 下一步" />
-        <EmptyPanel copy="尚无可汇总的 Workspace 活动数据。" title="本周工作摘要" />
-      </div>
+      <Dashboard gatewayState={gatewayState} transport={transport} />
     </WorkspacePage>
   )
 }
@@ -163,7 +158,7 @@ function renderSection(
   draftStore: TaskCreateDraftStore
 ) {
   if (section.id === 'dashboard') {
-    return <DashboardPage />
+    return <DashboardPage transport={transport} />
   }
 
   if (section.id === 'projects') {
