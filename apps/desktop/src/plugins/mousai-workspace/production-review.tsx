@@ -2,6 +2,7 @@ import { Button } from '@hermes/plugin-sdk'
 
 import type { Deliverable, ProductionGateState, ProductionReview, Task } from './domain'
 import { ProductionActionPanel } from './production-actions'
+import { ProductionHistory } from './production-history'
 import type { WorkspaceProductionActionTransport } from './service-production-actions'
 import type { ProductionReviewItem } from './service-production-review'
 
@@ -224,6 +225,11 @@ export function ProductionReviewCard({
         ) : (
           <p className="text-xs text-(--ui-text-tertiary)">Manifest 未设置 / 等待输入。</p>
         )}
+      </div>
+
+      <div className="mt-4 border-t border-(--ui-stroke-quaternary) pt-3">
+        <div className="mb-2 text-[0.6875rem] text-(--ui-text-quaternary)">Revision / Acceptance History</div>
+        <ProductionHistory review={review} />
       </div>
 
       <ProductionActionPanel item={item} onRefresh={onRefresh} transport={transport} />

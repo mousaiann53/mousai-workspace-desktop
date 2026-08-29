@@ -198,15 +198,34 @@ function event(value: unknown): ProductionEvent | null {
     return null
   }
 
+  const approvedScopeVersion =
+    value.approved_scope_version === undefined || value.approved_scope_version === null
+      ? null
+      : integer(value.approved_scope_version)
+
+  const parsedAcceptance =
+    value.acceptance === undefined || value.acceptance === null ? null : acceptance(value.acceptance)
+
+  if (
+    (value.approved_scope_version !== undefined &&
+      value.approved_scope_version !== null &&
+      approvedScopeVersion === null) ||
+    (value.acceptance !== undefined && value.acceptance !== null && parsedAcceptance === null)
+  ) {
+    return null
+  }
+
   return {
     state,
     at: asIsoDateTime(value.at),
     actor: asTrimmedText(value.actor),
     note: asTrimmedText(value.note),
+    approvedScopeVersion,
     revision: integer(value.revision),
     revisionReason: asTrimmedText(value.revision_reason),
     reviewerComment: asTrimmedText(value.reviewer_comment),
-    manifestVersion: asTrimmedText(value.manifest_version)
+    manifestVersion: asTrimmedText(value.manifest_version),
+    acceptance: parsedAcceptance
   }
 }
 

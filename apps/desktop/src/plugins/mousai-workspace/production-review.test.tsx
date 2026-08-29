@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { Deliverable, ProductionGateState, ProductionReview, Project, Task } from './domain'
@@ -129,10 +129,12 @@ function review(overrides: Partial<ProductionReview> = {}): ProductionReview {
         at: '2026-08-29T02:00:00.000Z',
         actor: 'Mousai',
         note: null,
+        approvedScopeVersion: 3,
         revision: 2,
         revisionReason: '修订版式',
         reviewerComment: '版式通过',
-        manifestVersion: null
+        manifestVersion: null,
+        acceptance: null
       }
     ],
     source: { system: 'workbridge', recordId: task.id },
@@ -197,7 +199,7 @@ describe('Production Review presentation', () => {
     expect(screen.getByText('等待验收（WAITING_ACCEPTANCE）')).toBeTruthy()
     expect(screen.getByText('WorkBridge')).toBeTruthy()
     expect(screen.getByText('v3')).toBeTruthy()
-    expect(screen.getByText('正式交付物')).toBeTruthy()
+    expect(screen.getAllByText('正式交付物').length).toBeGreaterThanOrEqual(2)
     expect(screen.getByText('需要决策').parentElement?.textContent).toContain('无')
     expect(screen.getByText('版式通过')).toBeTruthy()
     expect(screen.getByText('r2')).toBeTruthy()
@@ -221,10 +223,12 @@ describe('Production Review presentation', () => {
           at: '2026-08-29T03:00:00.000Z',
           actor: 'workbuddy',
           note: 'production started',
+          approvedScopeVersion: 3,
           revision: 2,
           revisionReason: null,
           reviewerComment: null,
-          manifestVersion: null
+          manifestVersion: null,
+          acceptance: null
         }
       ]
     })
@@ -255,10 +259,12 @@ describe('Production Review presentation', () => {
           at: '2026-08-29T03:00:00.000Z',
           actor: 'GPT-PM',
           note: 'external delivery',
+          approvedScopeVersion: 3,
           revision: 1,
           revisionReason: null,
           reviewerComment: null,
-          manifestVersion: 'manifest-v3'
+          manifestVersion: 'manifest-v3',
+          acceptance: null
         }
       ]
     })
@@ -322,7 +328,7 @@ describe('Production Review presentation', () => {
 
     expect(screen.getByText('Scope 已批准（APPROVED_SCOPE）')).toBeTruthy()
     expect(screen.getByText('v3')).toBeTruthy()
-    expect(screen.getByText('正式交付物')).toBeTruthy()
+    expect(screen.getAllByText('正式交付物').length).toBeGreaterThanOrEqual(2)
   })
 
   it('enables revision and acceptance only while waiting for human acceptance', () => {
@@ -415,6 +421,101 @@ describe('Production Review presentation', () => {
     expect(screen.getByText('已验收（ACCEPTED）')).toBeTruthy()
     expect(screen.getByText('通过')).toBeTruthy()
     expect(screen.getByText('manifest-v3')).toBeTruthy()
+  })
+
+  it('renders canonical scope and production events in append-only order without edit controls', () => {
+    const scopeV2 = {
+      ...approvedScope,
+      version: 4,
+      items: ['修订后的正式交付物'],
+      approvedAt: '2026-08-29T04:00:00.000Z',
+      scopeHash: 'd'.repeat(64)
+    }
+
+    const historical = review({
+      approvedScope: scopeV2,
+      scopeHistory: [approvedScope, scopeV2],
+      events: [
+        {
+          state: 'APPROVED_SCOPE',
+          at: '2026-08-29T04:00:00.000Z',
+          actor: 'Mousai',
+          note: 'scope v4 approved',
+          approvedScopeVersion: 4,
+          revision: null,
+          revisionReason: null,
+          reviewerComment: null,
+          manifestVersion: null,
+          acceptance: null
+        },
+        {
+          state: 'READY_FOR_PRODUCTION',
+          at: '2026-08-29T05:00:00.000Z',
+          actor: 'workbuddy',
+          note: 'production started',
+          approvedScopeVersion: 4,
+          revision: null,
+          revisionReason: null,
+          reviewerComment: null,
+          manifestVersion: null,
+          acceptance: null
+        },
+        {
+          state: 'WAITING_ACCEPTANCE',
+          at: '2026-08-29T06:00:00.000Z',
+          actor: 'workbuddy',
+          note: 'manifest submitted',
+          approvedScopeVersion: null,
+          revision: null,
+          revisionReason: null,
+          reviewerComment: null,
+          manifestVersion: 'manifest-v4',
+          acceptance: null
+        },
+        {
+          state: 'REVISION_REQUIRED',
+          at: '2026-08-29T07:00:00.000Z',
+          actor: 'Mousai',
+          note: null,
+          approvedScopeVersion: 4,
+          revision: 3,
+          revisionReason: '补充审核证据',
+          reviewerComment: '请按清单修订',
+          manifestVersion: null,
+          acceptance: null
+        },
+        {
+          state: 'ACCEPTED',
+          at: '2026-08-29T08:00:00.000Z',
+          actor: 'Mousai',
+          note: null,
+          approvedScopeVersion: null,
+          revision: null,
+          revisionReason: null,
+          reviewerComment: null,
+          manifestVersion: null,
+          acceptance: { verdict: 'PASS', reviewerComment: '最终通过' }
+        }
+      ]
+    })
+
+    const [item] = buildProductionReviewItems(project, [task], [deliverable], [historical])
+
+    render(card(item))
+
+    const history = screen.getByLabelText('Revision / Acceptance History')
+    const text = history.textContent ?? ''
+
+    expect(text).toContain('Scope v3')
+    expect(text).toContain('Scope v4')
+    expect(text).toContain('Manifest manifest-v4')
+    expect(text).toContain('Revision r3')
+    expect(text).toContain('Reason：补充审核证据')
+    expect(text).toContain('Reviewer：请按清单修订')
+    expect(text).toContain('Acceptance：PASS')
+    expect(text.indexOf('APPROVED_SCOPE')).toBeLessThan(text.indexOf('READY_FOR_PRODUCTION'))
+    expect(text.indexOf('READY_FOR_PRODUCTION')).toBeLessThan(text.indexOf('WAITING_ACCEPTANCE'))
+    expect(within(history).queryByRole('button')).toBeNull()
   })
 
   it.each<[ProductionGateState, string]>([

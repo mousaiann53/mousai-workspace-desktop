@@ -262,7 +262,8 @@ describe('Production Review adapter', () => {
           {
             state: 'APPROVED_SCOPE',
             at: '2026-08-29T01:00:00Z',
-            actor: 'Mousai'
+            actor: 'Mousai',
+            approved_scope_version: 3
           }
         ]
       }
@@ -281,7 +282,12 @@ describe('Production Review adapter', () => {
       source: { system: 'workbridge', recordId: 'WORK-001' }
     })
     expect(result.data[0].scopeHistory).toHaveLength(1)
-    expect(result.data[0].events[0]).toMatchObject({ state: 'APPROVED_SCOPE', actor: 'Mousai' })
+    expect(result.data[0].events[0]).toMatchObject({
+      state: 'APPROVED_SCOPE',
+      actor: 'Mousai',
+      approvedScopeVersion: 3,
+      acceptance: null
+    })
   })
 
   it.each([
@@ -314,6 +320,30 @@ describe('Production Review adapter', () => {
 
     expect(result.issues).toEqual([])
     expect(result.data[0].gateState).toBe(gateState)
+  })
+
+  it('preserves acceptance metadata inside the canonical append-only event chain', () => {
+    const result = adaptProductionReviews([
+      {
+        work_id: 'WORK-ACCEPTED-HISTORY',
+        gate_state: 'ACCEPTED',
+        missing_information: [],
+        approved_scope: scope,
+        scope_history: [scope],
+        acceptance: { verdict: 'PASS', comment: '最终通过' },
+        events: [
+          {
+            state: 'ACCEPTED',
+            at: '2026-08-29T08:00:00Z',
+            actor: 'Mousai',
+            acceptance: { verdict: 'PASS', comment: '最终通过' }
+          }
+        ]
+      }
+    ])
+
+    expect(result.issues).toEqual([])
+    expect(result.data[0].events[0].acceptance).toEqual({ verdict: 'PASS', reviewerComment: '最终通过' })
   })
 
   it('fails closed when a ready record has no approved_scope and drops duplicate work models', () => {

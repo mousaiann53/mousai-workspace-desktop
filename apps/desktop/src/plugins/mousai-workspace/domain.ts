@@ -171,10 +171,12 @@ export interface ProductionEvent {
   readonly at: string | null
   readonly actor: string | null
   readonly note: string | null
+  readonly approvedScopeVersion: number | null
   readonly revision: number | null
   readonly revisionReason: string | null
   readonly reviewerComment: string | null
   readonly manifestVersion: string | null
+  readonly acceptance: ProductionAcceptance | null
 }
 
 /**
