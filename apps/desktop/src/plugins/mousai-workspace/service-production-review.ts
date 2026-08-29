@@ -8,29 +8,7 @@ export interface ProductionReviewItem {
 }
 
 function reviewFor(deliverable: Deliverable, reviews: readonly ProductionReview[]): ProductionReview | null {
-  const exactMatches = reviews.filter(review => {
-    if (review.workId !== deliverable.workId) {
-      return false
-    }
-
-    if (review.deliverableId) {
-      return review.deliverableId === deliverable.id
-    }
-
-    return review.relativePath === deliverable.relativePath && review.sha256 === deliverable.sha256
-  })
-
-  if (exactMatches.length !== 0) {
-    return exactMatches.length === 1 ? exactMatches[0] : null
-  }
-
-  const workMatches = reviews.filter(
-    review =>
-      review.workId === deliverable.workId &&
-      review.deliverableId === null &&
-      review.relativePath === null &&
-      review.sha256 === null
-  )
+  const workMatches = reviews.filter(review => review.workId === deliverable.workId)
 
   return workMatches.length === 1 ? workMatches[0] : null
 }

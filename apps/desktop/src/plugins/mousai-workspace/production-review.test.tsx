@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
-import type { Deliverable, ProductionReview, Project, Task } from './domain'
+import type { Deliverable, ProductionGateState, ProductionReview, Project, Task } from './domain'
 import { ProductionReviewCard } from './production-review'
 import { buildProductionReviewItems } from './service-production-review'
 
@@ -89,45 +89,56 @@ const deliverable: Deliverable = {
   source: { system: 'manifest', recordId: 'deliverables/final.pdf' }
 }
 
+const approvedScope = {
+  scopeId: 'scope-001',
+  version: 3,
+  items: ['正式交付物'],
+  approvedBy: 'Mousai',
+  approvedAt: '2026-08-29T01:30:00.000Z',
+  scopeHash: 'c'.repeat(64)
+} as const
+
 function review(overrides: Partial<ProductionReview> = {}): ProductionReview {
   return {
-    id: 'review-001',
     workId: task.id,
-    deliverableId: deliverable.id,
-    relativePath: null,
-    sha256: null,
-    authority: 'control',
-    gateState: 'ready_for_production',
-    gateStatusRaw: 'ready_for_production',
-    productionStatus: '已批准生产',
-    currentExecutor: '司木 Moss',
-    scopeApproved: true,
-    approvedScopeVersion: 'scope-v3',
+    authority: 'workbridge',
+    gateState: 'WAITING_ACCEPTANCE',
     missingInformation: [],
-    decisionsRequired: ['确认发布渠道'],
-    mousaiReviewComment: '版式通过',
-    revision: 'r2',
-    finalVersion: 'v1.0',
-    skillCandidateStatus: '待评估',
-    updatedAt: '2026-08-29T02:00:00Z',
-    source: { system: 'control', recordId: 'review-001' },
+    decisionRequired: true,
+    approvedScope,
+    scopeHistory: [approvedScope],
+    revision: 2,
+    manifestVersion: 'manifest-v3',
+    acceptance: null,
+    bundleMeta: {
+      missingInformation: [],
+      decisionRequired: true,
+      decisionNote: null,
+      dueDate: '2026-09-01',
+      revision: 2,
+      revisionReason: '按审阅意见修订'
+    },
+    events: [
+      {
+        state: 'REVISION_REQUIRED',
+        at: '2026-08-29T02:00:00.000Z',
+        actor: 'Mousai',
+        note: null,
+        revision: 2,
+        revisionReason: '修订版式',
+        reviewerComment: '版式通过',
+        manifestVersion: null
+      }
+    ],
+    source: { system: 'workbridge', recordId: task.id },
     ...overrides
   }
 }
 
 describe('Production Review presentation', () => {
-  it('prefers an exact deliverable authority record and renders every approved production fact', () => {
-    const workLevel = review({
-      id: 'review-work',
-      deliverableId: null,
-      source: { system: 'control', recordId: 'review-work' }
-    })
-
-    const exact = review()
-    const [item] = buildProductionReviewItems(project, [task], [deliverable], [workLevel, exact])
+  it('joins the canonical work-level model and renders authoritative production facts', () => {
+    const [item] = buildProductionReviewItems(project, [task], [deliverable], [review()])
     const onOpenLocal = vi.fn()
-
-    expect(item.review?.id).toBe('review-001')
 
     render(<ProductionReviewCard item={item} onOpenLocal={onOpenLocal} />)
 
@@ -143,55 +154,74 @@ describe('Production Review presentation', () => {
       '需要决策',
       'WorkBridge 状态',
       'Approved Scope version',
+      'Scope 历史',
       'Mousai 验收意见',
       'Revision',
       '最终版本',
-      'Skill candidate 状态'
+      'Skill candidate 状态',
+      '验收结果',
+      'Gate 事件'
     ]) {
-      expect(screen.getByText(label)).toBeTruthy()
+      expect(screen.getAllByText(label).length).toBeGreaterThanOrEqual(1)
     }
 
     expect(screen.getByText('历史建筑活化利用')).toBeTruthy()
-    expect(screen.getByText('可进入生产')).toBeTruthy()
-    expect(screen.getByText('scope-v3')).toBeTruthy()
-    expect(screen.getByText('确认发布渠道')).toBeTruthy()
+    expect(screen.getByText('等待验收（WAITING_ACCEPTANCE）')).toBeTruthy()
+    expect(screen.getByText('WorkBridge')).toBeTruthy()
+    expect(screen.getByText('v3')).toBeTruthy()
+    expect(screen.getAllByText('需要决策')).toHaveLength(2)
     expect(screen.getByText('版式通过')).toBeTruthy()
-    expect(screen.getByText('v1.0')).toBeTruthy()
+    expect(screen.getByText('r2')).toBeTruthy()
     expect(screen.getByText('已提交')).toBeTruthy()
     expect(screen.getByText('已交付')).toBeTruthy()
-    expect(screen.getByText('待人工验收')).toBeTruthy()
-    expect(screen.getByText(/Manifest：1024 bytes/)).toBeTruthy()
+    expect(screen.getAllByText('待人工验收')).toHaveLength(2)
+    expect(screen.getByText(/Manifest：1024 bytes · .pdf · version manifest-v3/)).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: '打开本地产物' }))
     expect(onOpenLocal).toHaveBeenCalledWith(task.id)
   })
 
-  it('keeps absent production authority fields visibly unset and never claims readiness', () => {
+  it('keeps absent ProductionReadModel fields visibly unset and never invents a record', () => {
     const [item] = buildProductionReviewItems(project, [{ ...task, executor: null, deadline: null }], [deliverable], [])
 
     render(<ProductionReviewCard item={item} onOpenLocal={vi.fn()} />)
 
-    expect(screen.getByText('等待 Control / WorkBridge')).toBeTruthy()
-    expect(screen.getByText(/尚无 Control \/ WorkBridge production record/)).toBeTruthy()
-    expect(screen.getAllByText('未设置 / 等待输入').length).toBeGreaterThanOrEqual(8)
-    expect(screen.queryByText('可进入生产')).toBeNull()
+    expect(screen.getByText(/尚无 WorkBridge ProductionReadModel/)).toBeTruthy()
+    expect(screen.getAllByText('未设置 / 等待输入').length).toBeGreaterThanOrEqual(10)
+    expect(screen.queryByText(/READY_FOR_PRODUCTION/)).toBeNull()
   })
 
-  it('shows an unapproved scope as blocked rather than ready for production', () => {
-    const blocked = review({
-      gateState: 'blocked',
-      gateStatusRaw: 'ready_for_production',
-      productionStatus: null,
-      scopeApproved: false,
-      approvedScopeVersion: null
+  it('shows final version only after canonical acceptance', () => {
+    const accepted = review({
+      gateState: 'ACCEPTED',
+      acceptance: { verdict: '通过', reviewerComment: '验收通过' }
     })
 
-    const [item] = buildProductionReviewItems(project, [task], [deliverable], [blocked])
+    const [item] = buildProductionReviewItems(project, [task], [deliverable], [accepted])
 
     render(<ProductionReviewCard item={item} onOpenLocal={vi.fn()} />)
 
-    expect(screen.getByText('阻塞')).toBeTruthy()
-    expect(screen.getByText('未批准')).toBeTruthy()
-    expect(screen.queryByText('可进入生产')).toBeNull()
+    expect(screen.getByText('已验收（ACCEPTED）')).toBeTruthy()
+    expect(screen.getByText('通过')).toBeTruthy()
+    expect(screen.getByText('manifest-v3')).toBeTruthy()
+  })
+
+  it.each<[ProductionGateState, string]>([
+    ['INPUT_REQUIRED', '需要输入（INPUT_REQUIRED）'],
+    ['MATERIAL_MISSING', '资料缺失（MATERIAL_MISSING）'],
+    ['DECISION_REQUIRED', '需要决策（DECISION_REQUIRED）'],
+    ['WAITING_HUMAN_APPROVAL', '等待人工批准（WAITING_HUMAN_APPROVAL）'],
+    ['APPROVED_SCOPE', 'Scope 已批准（APPROVED_SCOPE）'],
+    ['READY_FOR_PRODUCTION', '可进入生产（READY_FOR_PRODUCTION）'],
+    ['REVISION_REQUIRED', '需要修订（REVISION_REQUIRED）'],
+    ['DELIVERED', '已交付（DELIVERED）'],
+    ['WAITING_ACCEPTANCE', '等待验收（WAITING_ACCEPTANCE）'],
+    ['ACCEPTED', '已验收（ACCEPTED）']
+  ])('preserves the canonical %s gate label', (gateState, label) => {
+    const [item] = buildProductionReviewItems(project, [task], [deliverable], [review({ gateState })])
+
+    render(<ProductionReviewCard item={item} onOpenLocal={vi.fn()} />)
+
+    expect(screen.getByText(label)).toBeTruthy()
   })
 })

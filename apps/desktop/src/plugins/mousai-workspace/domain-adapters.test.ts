@@ -228,72 +228,145 @@ describe('WorkBridge and Manifest adapters', () => {
 })
 
 describe('Production Review adapter', () => {
-  it('accepts a Control-owned ready gate only with an explicitly approved scope version', () => {
+  const scope = {
+    scope_id: 'scope-001',
+    version: 3,
+    items: ['正式交付物'],
+    approved_by: 'Mousai',
+    approved_at: '2026-08-29T01:00:00Z',
+    scope_hash: 'c'.repeat(64)
+  }
+
+  it('adapts the canonical OpenAPI 1.6 ProductionReadModel without requiring an authority field', () => {
     const result = adaptProductionReviews([
       {
-        review_id: 'review-001',
         work_id: 'WORK-001',
-        relative_path: 'deliverables/test.pdf',
-        sha256: SHA,
-        authority: 'control',
-        gate_status: 'ready_for_production',
-        production_status: 'approved_for_run',
-        current_executor: '司木 Moss',
-        scope_approved: true,
-        approved_scope_version: 'scope-v3',
+        gate_state: 'READY_FOR_PRODUCTION',
         missing_information: [],
-        decisions_required: ['确认正式版本名称'],
-        mousai_review_comment: '范围已确认',
-        revision: 'r2',
-        final_version: null,
-        skill_candidate_status: '待评估'
+        decision_required: false,
+        approved_scope: scope,
+        scope_history: [scope],
+        revision: 2,
+        manifest_version: 'manifest-v3',
+        acceptance: null,
+        bundle_meta: {
+          missing_information: [],
+          decision_required: false,
+          revision: 2,
+          revision_reason: '人工批准范围'
+        },
+        events: [
+          {
+            state: 'APPROVED_SCOPE',
+            at: '2026-08-29T01:00:00Z',
+            actor: 'Mousai'
+          }
+        ]
       }
     ])
 
     expect(result.issues).toEqual([])
     expect(result.data[0]).toMatchObject({
-      authority: 'control',
-      gateState: 'ready_for_production',
-      currentExecutor: '司木 Moss',
-      scopeApproved: true,
-      approvedScopeVersion: 'scope-v3',
+      workId: 'WORK-001',
+      authority: 'workbridge',
+      gateState: 'READY_FOR_PRODUCTION',
       missingInformation: [],
-      decisionsRequired: ['确认正式版本名称'],
-      finalVersion: null
+      decisionRequired: false,
+      approvedScope: { version: 3 },
+      revision: 2,
+      manifestVersion: 'manifest-v3',
+      source: { system: 'workbridge', recordId: 'WORK-001' }
     })
+    expect(result.data[0].scopeHistory).toHaveLength(1)
+    expect(result.data[0].events[0]).toMatchObject({ state: 'APPROVED_SCOPE', actor: 'Mousai' })
   })
 
-  it('fails the ready gate closed when scope approval is missing and drops ambiguous authority records', () => {
-    const withoutScope = adaptProductionReviews([
+  it.each([
+    'INPUT_REQUIRED',
+    'MATERIAL_MISSING',
+    'DECISION_REQUIRED',
+    'WAITING_HUMAN_APPROVAL',
+    'APPROVED_SCOPE',
+    'READY_FOR_PRODUCTION',
+    'REVISION_REQUIRED',
+    'DELIVERED',
+    'WAITING_ACCEPTANCE',
+    'ACCEPTED'
+  ])('preserves the canonical %s gate state', gateState => {
+    const needsScope = !['INPUT_REQUIRED', 'MATERIAL_MISSING', 'DECISION_REQUIRED', 'WAITING_HUMAN_APPROVAL'].includes(
+      gateState
+    )
+
+    const result = adaptProductionReviews([
       {
-        review_id: 'review-unapproved',
-        work_id: 'WORK-001',
-        authority: 'workbridge',
-        gate_status: 'ready_for_production',
-        production_status: 'ready_for_production'
+        work_id: `WORK-${gateState}`,
+        gate_state: gateState,
+        missing_information: [],
+        approved_scope: needsScope ? scope : null,
+        scope_history: needsScope ? [scope] : [],
+        acceptance: gateState === 'ACCEPTED' ? { verdict: '通过' } : null,
+        events: []
       }
     ])
 
-    expect(withoutScope.data[0]).toMatchObject({
-      gateState: 'blocked',
-      scopeApproved: null,
-      approvedScopeVersion: null,
-      productionStatus: null,
-      missingInformation: null,
-      decisionsRequired: null
-    })
-    expect(withoutScope.issues.map(item => item.message)).toContain('Ready gate has no approved scope version.')
-    expect(withoutScope.issues.map(item => item.message)).toContain(
-      'Ready production status has no approved scope version.'
-    )
+    expect(result.issues).toEqual([])
+    expect(result.data[0].gateState).toBe(gateState)
+  })
+
+  it('fails closed when a ready record has no approved_scope and drops duplicate work models', () => {
+    const withoutScope = adaptProductionReviews([
+      {
+        work_id: 'WORK-001',
+        gate_state: 'READY_FOR_PRODUCTION',
+        missing_information: [],
+        approved_scope: null,
+        scope_history: [],
+        events: []
+      }
+    ])
+
+    expect(withoutScope.data).toEqual([])
+    expect(withoutScope.issues[0].message).toContain('has no canonical approved_scope')
 
     const ambiguous = adaptProductionReviews([
-      { review_id: 'review-a', work_id: 'WORK-001', authority: 'control' },
-      { review_id: 'review-b', work_id: 'WORK-001', authority: 'workbridge' }
+      {
+        work_id: 'WORK-001',
+        gate_state: 'INPUT_REQUIRED',
+        missing_information: [],
+        scope_history: [],
+        events: []
+      },
+      {
+        work_id: 'WORK-001',
+        gate_state: 'MATERIAL_MISSING',
+        missing_information: ['正式资料'],
+        scope_history: [],
+        events: []
+      }
     ])
 
     expect(ambiguous.data).toEqual([])
     expect(ambiguous.issues.map(item => item.code)).toContain('duplicate_id')
+  })
+
+  it('rejects the superseded temporary review field shape', () => {
+    const result = adaptProductionReviews([
+      {
+        review_id: 'legacy-review',
+        work_id: 'WORK-001',
+        authority: 'control',
+        gate_status: 'ready_for_production',
+        scope_approved: true,
+        approved_scope_version: 'scope-v1'
+      }
+    ])
+
+    expect(result.data).toEqual([])
+    expect(result.issues[0]).toMatchObject({
+      source: 'workbridge',
+      code: 'invalid_record',
+      recordId: 'WORK-001'
+    })
   })
 })
 
@@ -320,12 +393,29 @@ describe('Workspace read boundary', () => {
           },
           productionReviews: [
             {
-              review_id: 'review-002',
               work_id: 'WORK-001',
-              authority: 'control',
-              gate_status: 'pending_review',
-              scope_approved: true,
-              approved_scope_version: 'scope-v1'
+              gate_state: 'WAITING_ACCEPTANCE',
+              missing_information: [],
+              decision_required: false,
+              approved_scope: {
+                scope_id: 'scope-001',
+                version: 1,
+                items: ['正式交付物'],
+                approved_by: 'Mousai',
+                approved_at: '2026-08-28T00:00:00Z',
+                scope_hash: 'd'.repeat(64)
+              },
+              scope_history: [
+                {
+                  scope_id: 'scope-001',
+                  version: 1,
+                  items: ['正式交付物'],
+                  approved_by: 'Mousai',
+                  approved_at: '2026-08-28T00:00:00Z',
+                  scope_hash: 'd'.repeat(64)
+                }
+              ],
+              events: []
             }
           ],
           loadedAt: '2026-08-28T01:00:00Z'
@@ -338,8 +428,8 @@ describe('Workspace read boundary', () => {
     expect(result.snapshot.tasks.find(task => task.id === 'WORK-002')?.status).toBe('waiting_local')
     expect(result.snapshot.productionReviews[0]).toMatchObject({
       workId: 'WORK-001',
-      authority: 'control',
-      gateState: 'pending_review'
+      authority: 'workbridge',
+      gateState: 'WAITING_ACCEPTANCE'
     })
     expect(result.snapshot.loadedAt).toBe('2026-08-28T01:00:00.000Z')
   })

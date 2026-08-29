@@ -1,14 +1,32 @@
 import { Button } from '@hermes/plugin-sdk'
 
-import type { ProductionGateState, Task } from './domain'
+import type { ProductionGateState, ProductionReview, Task } from './domain'
 import type { ProductionReviewItem } from './service-production-review'
 
 const GATE_LABELS: Readonly<Record<ProductionGateState, string>> = {
-  blocked: '阻塞',
-  in_production: '生产中',
-  pending_review: '待人工验收',
-  ready_for_production: '可进入生产',
-  unknown: '未设置'
+  INPUT_REQUIRED: '需要输入（INPUT_REQUIRED）',
+  MATERIAL_MISSING: '资料缺失（MATERIAL_MISSING）',
+  DECISION_REQUIRED: '需要决策（DECISION_REQUIRED）',
+  WAITING_HUMAN_APPROVAL: '等待人工批准（WAITING_HUMAN_APPROVAL）',
+  APPROVED_SCOPE: 'Scope 已批准（APPROVED_SCOPE）',
+  READY_FOR_PRODUCTION: '可进入生产（READY_FOR_PRODUCTION）',
+  REVISION_REQUIRED: '需要修订（REVISION_REQUIRED）',
+  DELIVERED: '已交付（DELIVERED）',
+  WAITING_ACCEPTANCE: '等待验收（WAITING_ACCEPTANCE）',
+  ACCEPTED: '已验收（ACCEPTED）'
+}
+
+const PRODUCTION_STATUS_LABELS: Readonly<Record<ProductionGateState, string>> = {
+  INPUT_REQUIRED: '等待输入',
+  MATERIAL_MISSING: 'Gate 阻塞',
+  DECISION_REQUIRED: 'Gate 阻塞',
+  WAITING_HUMAN_APPROVAL: '等待人工批准',
+  APPROVED_SCOPE: 'Scope 已批准',
+  READY_FOR_PRODUCTION: '已获准生产',
+  REVISION_REQUIRED: '等待修订',
+  DELIVERED: '已交付',
+  WAITING_ACCEPTANCE: '待人工验收',
+  ACCEPTED: '已验收'
 }
 
 const WORKBRIDGE_LABELS: Readonly<Record<Task['workBridgeState'], string>> = {
@@ -22,6 +40,8 @@ const WORKBRIDGE_LABELS: Readonly<Record<Task['workBridgeState'], string>> = {
   unknown: '未知',
   waiting: '等待本机'
 }
+
+const DELIVERED_GATES = new Set<ProductionGateState>(['DELIVERED', 'WAITING_ACCEPTANCE', 'ACCEPTED'])
 
 function value(text: null | string): string {
   return text ?? '未设置 / 等待输入'
@@ -43,6 +63,50 @@ function listValue(items: readonly string[] | null): string {
   return items.length ? items.join('；') : '无'
 }
 
+function decisionValue(review: ProductionReview | null): string {
+  if (review?.decisionRequired === true) {
+    return '需要决策'
+  }
+
+  if (review?.decisionRequired === false) {
+    return '无'
+  }
+
+  return '未设置 / 等待输入'
+}
+
+function latestReviewComment(review: ProductionReview | null): string | null {
+  if (!review) {
+    return null
+  }
+
+  return (
+    [...review.events].reverse().find(event => event.reviewerComment)?.reviewerComment ??
+    review.acceptance?.reviewerComment ??
+    null
+  )
+}
+
+function deliveryBadge(review: ProductionReview | null): string {
+  return review && DELIVERED_GATES.has(review.gateState) ? '已交付' : '待交付'
+}
+
+function acceptanceBadge(review: ProductionReview | null): string {
+  if (review?.gateState === 'ACCEPTED') {
+    return '已验收'
+  }
+
+  if (review?.gateState === 'WAITING_ACCEPTANCE') {
+    return '待人工验收'
+  }
+
+  if (review?.gateState === 'REVISION_REQUIRED') {
+    return '需要修订'
+  }
+
+  return '验收状态未设置'
+}
+
 function ReviewFact({ label, children }: { label: string; children: string }) {
   return (
     <div>
@@ -60,15 +124,9 @@ export function ProductionReviewCard({
   onOpenLocal: (workId: string) => void
 }) {
   const { deliverable, project, review, task } = item
-
-  const scope =
-    review?.scopeApproved === true
-      ? value(review.approvedScopeVersion)
-      : review?.scopeApproved === false
-        ? '未批准'
-        : '未设置 / 等待输入'
-
-  const gate = review ? GATE_LABELS[review.gateState] : '等待 Control / WorkBridge'
+  const gate = review ? GATE_LABELS[review.gateState] : '未设置 / 等待输入'
+  const scopeVersion = review?.approvedScope ? `v${review.approvedScope.version}` : '未设置 / 等待输入'
+  const finalVersion = review?.gateState === 'ACCEPTED' ? review.manifestVersion : null
 
   return (
     <article className="rounded-lg border border-(--ui-stroke-quaternary) p-4">
@@ -79,51 +137,53 @@ export function ProductionReviewCard({
         </div>
         <div className="flex flex-wrap gap-1 text-[0.6875rem] text-(--ui-text-tertiary)">
           <span className="rounded-full border border-(--ui-stroke-quaternary) px-2 py-1">已提交</span>
+          <span className="rounded-full border border-(--ui-stroke-quaternary) px-2 py-1">{deliveryBadge(review)}</span>
           <span className="rounded-full border border-(--ui-stroke-quaternary) px-2 py-1">
-            {deliverable.deliveryState === 'delivered' ? '已交付' : '待交付'}
-          </span>
-          <span className="rounded-full border border-(--ui-stroke-quaternary) px-2 py-1">
-            {deliverable.reviewState === 'pending'
-              ? '待人工验收'
-              : deliverable.reviewState === 'approved'
-                ? '已验收'
-                : '验收状态未设置'}
+            {acceptanceBadge(review)}
           </span>
         </div>
       </div>
 
       {!review && (
         <p className="mt-3 rounded-md bg-foreground/4 px-3 py-2 text-xs text-(--ui-text-tertiary)">
-          尚无 Control / WorkBridge production record；权威生产字段保持等待输入。
+          尚无 WorkBridge ProductionReadModel；权威生产字段保持未设置 / 等待输入。
         </p>
       )}
 
       <dl className="mt-4 grid gap-x-5 gap-y-4 sm:grid-cols-2 xl:grid-cols-3">
         <ReviewFact label="所属项目">{project.name}</ReviewFact>
         <ReviewFact label="当前 Gate">{gate}</ReviewFact>
-        <ReviewFact label="Gate 权威">
-          {review ? (review.authority === 'control' ? 'Control' : 'WorkBridge') : '未设置 / 等待输入'}
+        <ReviewFact label="Gate 权威">{review ? 'WorkBridge' : '未设置 / 等待输入'}</ReviewFact>
+        <ReviewFact label="Production 状态">
+          {review ? PRODUCTION_STATUS_LABELS[review.gateState] : '未设置 / 等待输入'}
         </ReviewFact>
-        <ReviewFact label="Production 状态">{value(review?.productionStatus ?? null)}</ReviewFact>
         <ReviewFact label="DDL">{dateValue(task?.deadline ?? null)}</ReviewFact>
-        <ReviewFact label="当前执行者">{value(review?.currentExecutor ?? task?.executor ?? null)}</ReviewFact>
+        <ReviewFact label="当前执行者">{value(task?.executor ?? null)}</ReviewFact>
         <ReviewFact label="下一步">{value(task?.nextAction ?? null)}</ReviewFact>
         <ReviewFact label="缺失资料">{listValue(review?.missingInformation ?? null)}</ReviewFact>
-        <ReviewFact label="需要决策">{listValue(review?.decisionsRequired ?? null)}</ReviewFact>
+        <ReviewFact label="需要决策">{decisionValue(review)}</ReviewFact>
         <ReviewFact label="WorkBridge 状态">
           {task ? WORKBRIDGE_LABELS[task.workBridgeState] : '未设置 / 等待输入'}
         </ReviewFact>
-        <ReviewFact label="Approved Scope version">{scope}</ReviewFact>
-        <ReviewFact label="Mousai 验收意见">{value(review?.mousaiReviewComment ?? null)}</ReviewFact>
-        <ReviewFact label="Revision">{value(review?.revision ?? null)}</ReviewFact>
-        <ReviewFact label="最终版本">{value(review?.finalVersion ?? null)}</ReviewFact>
-        <ReviewFact label="Skill candidate 状态">{value(review?.skillCandidateStatus ?? null)}</ReviewFact>
+        <ReviewFact label="Approved Scope version">{scopeVersion}</ReviewFact>
+        <ReviewFact label="Scope 历史">
+          {review ? `${review.scopeHistory.length} 个版本` : '未设置 / 等待输入'}
+        </ReviewFact>
+        <ReviewFact label="Mousai 验收意见">{value(latestReviewComment(review))}</ReviewFact>
+        <ReviewFact label="Revision">
+          {review?.revision === null || !review ? '未设置 / 等待输入' : `r${review.revision}`}
+        </ReviewFact>
+        <ReviewFact label="最终版本">{value(finalVersion)}</ReviewFact>
+        <ReviewFact label="Skill candidate 状态">未设置 / 等待输入</ReviewFact>
+        <ReviewFact label="验收结果">{value(review?.acceptance?.verdict ?? null)}</ReviewFact>
+        <ReviewFact label="Gate 事件">{review ? `${review.events.length} 条` : '未设置 / 等待输入'}</ReviewFact>
       </dl>
 
       <div className="mt-4 flex flex-wrap items-end justify-between gap-3 border-t border-(--ui-stroke-quaternary) pt-3">
         <div className="min-w-0 text-[0.6875rem] text-(--ui-text-quaternary)">
           <div>
-            Manifest：{deliverable.sizeBytes} bytes · {deliverable.extension}
+            Manifest：{deliverable.sizeBytes} bytes · {deliverable.extension} · version{' '}
+            {value(review?.manifestVersion ?? null)}
           </div>
           <div className="mt-1 break-all">SHA256：{deliverable.sha256}</div>
         </div>

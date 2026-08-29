@@ -38,10 +38,13 @@ describe('secure Workspace plugin REST transport', () => {
         ],
         productionReviews: [
           {
-            review_id: 'review-transport',
             work_id: 'WORK-001',
-            authority: 'control',
-            gate_status: 'blocked'
+            gate_state: 'MATERIAL_MISSING',
+            missing_information: ['正式模板'],
+            decision_required: false,
+            approved_scope: null,
+            scope_history: [],
+            events: []
           }
         ]
       })
@@ -69,9 +72,10 @@ describe('secure Workspace plugin REST transport', () => {
     })
     expect(result.snapshot.loadedAt).toBe('2026-08-29T01:02:03.000Z')
     expect(result.snapshot.productionReviews[0]).toMatchObject({
-      id: 'review-transport',
-      authority: 'control',
-      gateState: 'blocked'
+      workId: 'WORK-001',
+      authority: 'workbridge',
+      gateState: 'MATERIAL_MISSING',
+      missingInformation: ['正式模板']
     })
     expect(JSON.stringify(result)).not.toContain('未知字段')
   })

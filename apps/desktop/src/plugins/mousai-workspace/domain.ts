@@ -124,8 +124,51 @@ export interface Deliverable {
   readonly source: SourceReference
 }
 
-export type ProductionAuthority = 'control' | 'workbridge'
-export type ProductionGateState = 'blocked' | 'in_production' | 'pending_review' | 'ready_for_production' | 'unknown'
+export type ProductionGateState =
+  | 'ACCEPTED'
+  | 'APPROVED_SCOPE'
+  | 'DECISION_REQUIRED'
+  | 'DELIVERED'
+  | 'INPUT_REQUIRED'
+  | 'MATERIAL_MISSING'
+  | 'READY_FOR_PRODUCTION'
+  | 'REVISION_REQUIRED'
+  | 'WAITING_ACCEPTANCE'
+  | 'WAITING_HUMAN_APPROVAL'
+
+export interface ProductionApprovedScope {
+  readonly scopeId: string
+  readonly version: number
+  readonly items: readonly string[]
+  readonly approvedBy: string
+  readonly approvedAt: string
+  readonly scopeHash: string
+}
+
+export interface ProductionAcceptance {
+  readonly verdict: string
+  readonly reviewerComment: string | null
+}
+
+export interface ProductionBundleMeta {
+  readonly missingInformation: readonly string[] | null
+  readonly decisionRequired: boolean | null
+  readonly decisionNote: string | null
+  readonly dueDate: string | null
+  readonly revision: number | null
+  readonly revisionReason: string | null
+}
+
+export interface ProductionEvent {
+  readonly state: ProductionGateState | null
+  readonly at: string | null
+  readonly actor: string | null
+  readonly note: string | null
+  readonly revision: number | null
+  readonly revisionReason: string | null
+  readonly reviewerComment: string | null
+  readonly manifestVersion: string | null
+}
 
 /**
  * Optional authority projection supplied by the existing Workspace snapshot.
@@ -133,25 +176,18 @@ export type ProductionGateState = 'blocked' | 'in_production' | 'pending_review'
  * its Control/WorkBridge-owned facts unset until the backend supplies them.
  */
 export interface ProductionReview {
-  readonly id: string
   readonly workId: string
-  readonly deliverableId: string | null
-  readonly relativePath: string | null
-  readonly sha256: string | null
-  readonly authority: ProductionAuthority
+  readonly authority: 'workbridge'
   readonly gateState: ProductionGateState
-  readonly gateStatusRaw: string | null
-  readonly productionStatus: string | null
-  readonly currentExecutor: string | null
-  readonly scopeApproved: boolean | null
-  readonly approvedScopeVersion: string | null
-  readonly missingInformation: readonly string[] | null
-  readonly decisionsRequired: readonly string[] | null
-  readonly mousaiReviewComment: string | null
-  readonly revision: string | null
-  readonly finalVersion: string | null
-  readonly skillCandidateStatus: string | null
-  readonly updatedAt: string | null
+  readonly missingInformation: readonly string[]
+  readonly decisionRequired: boolean | null
+  readonly approvedScope: ProductionApprovedScope | null
+  readonly scopeHistory: readonly ProductionApprovedScope[]
+  readonly revision: number | null
+  readonly manifestVersion: string | null
+  readonly acceptance: ProductionAcceptance | null
+  readonly bundleMeta: ProductionBundleMeta | null
+  readonly events: readonly ProductionEvent[]
   readonly source: SourceReference
 }
 
