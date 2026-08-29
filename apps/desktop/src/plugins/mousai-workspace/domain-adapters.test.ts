@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { adaptManifest } from './adapter-manifest'
+import { adaptProductionReviews } from './adapter-production-review'
 import { adaptWorkBridgeJobs } from './adapter-workbridge'
 import { adaptWorkDataSnapshot } from './adapter-workdata'
 import { createUnavailableWorkspaceReadTransport, readWorkspaceSnapshot } from './service-workspace-read'
@@ -226,6 +227,76 @@ describe('WorkBridge and Manifest adapters', () => {
   })
 })
 
+describe('Production Review adapter', () => {
+  it('accepts a Control-owned ready gate only with an explicitly approved scope version', () => {
+    const result = adaptProductionReviews([
+      {
+        review_id: 'review-001',
+        work_id: 'WORK-001',
+        relative_path: 'deliverables/test.pdf',
+        sha256: SHA,
+        authority: 'control',
+        gate_status: 'ready_for_production',
+        production_status: 'approved_for_run',
+        current_executor: '司木 Moss',
+        scope_approved: true,
+        approved_scope_version: 'scope-v3',
+        missing_information: [],
+        decisions_required: ['确认正式版本名称'],
+        mousai_review_comment: '范围已确认',
+        revision: 'r2',
+        final_version: null,
+        skill_candidate_status: '待评估'
+      }
+    ])
+
+    expect(result.issues).toEqual([])
+    expect(result.data[0]).toMatchObject({
+      authority: 'control',
+      gateState: 'ready_for_production',
+      currentExecutor: '司木 Moss',
+      scopeApproved: true,
+      approvedScopeVersion: 'scope-v3',
+      missingInformation: [],
+      decisionsRequired: ['确认正式版本名称'],
+      finalVersion: null
+    })
+  })
+
+  it('fails the ready gate closed when scope approval is missing and drops ambiguous authority records', () => {
+    const withoutScope = adaptProductionReviews([
+      {
+        review_id: 'review-unapproved',
+        work_id: 'WORK-001',
+        authority: 'workbridge',
+        gate_status: 'ready_for_production',
+        production_status: 'ready_for_production'
+      }
+    ])
+
+    expect(withoutScope.data[0]).toMatchObject({
+      gateState: 'blocked',
+      scopeApproved: null,
+      approvedScopeVersion: null,
+      productionStatus: null,
+      missingInformation: null,
+      decisionsRequired: null
+    })
+    expect(withoutScope.issues.map(item => item.message)).toContain('Ready gate has no approved scope version.')
+    expect(withoutScope.issues.map(item => item.message)).toContain(
+      'Ready production status has no approved scope version.'
+    )
+
+    const ambiguous = adaptProductionReviews([
+      { review_id: 'review-a', work_id: 'WORK-001', authority: 'control' },
+      { review_id: 'review-b', work_id: 'WORK-001', authority: 'workbridge' }
+    ])
+
+    expect(ambiguous.data).toEqual([])
+    expect(ambiguous.issues.map(item => item.code)).toContain('duplicate_id')
+  })
+})
+
 describe('Workspace read boundary', () => {
   it('uses WorkData as the task authority and adds only missing WorkBridge jobs', async () => {
     const result = await readWorkspaceSnapshot({
@@ -247,6 +318,16 @@ describe('Workspace read boundary', () => {
               }
             ]
           },
+          productionReviews: [
+            {
+              review_id: 'review-002',
+              work_id: 'WORK-001',
+              authority: 'control',
+              gate_status: 'pending_review',
+              scope_approved: true,
+              approved_scope_version: 'scope-v1'
+            }
+          ],
           loadedAt: '2026-08-28T01:00:00Z'
         }
       }
@@ -255,6 +336,11 @@ describe('Workspace read boundary', () => {
     expect(result.snapshot.tasks).toHaveLength(2)
     expect(result.snapshot.tasks.find(task => task.id === 'WORK-001')?.title).toBe('整理第一次课资料')
     expect(result.snapshot.tasks.find(task => task.id === 'WORK-002')?.status).toBe('waiting_local')
+    expect(result.snapshot.productionReviews[0]).toMatchObject({
+      workId: 'WORK-001',
+      authority: 'control',
+      gateState: 'pending_review'
+    })
     expect(result.snapshot.loadedAt).toBe('2026-08-28T01:00:00.000Z')
   })
 

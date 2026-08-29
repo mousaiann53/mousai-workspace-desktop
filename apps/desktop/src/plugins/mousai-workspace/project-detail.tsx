@@ -19,6 +19,7 @@ import {
 import { type ReactNode, useEffect, useMemo, useState } from 'react'
 
 import type { Deliverable, Project, Task } from './domain'
+import { ProductionReviewCard } from './production-review'
 import type { LocalDeliverableAccess } from './service-local-deliverables'
 import { projectDetailModel, type TimelineLayerModel } from './service-project-detail'
 import { taskActionCapability } from './service-task-actions'
@@ -739,47 +740,26 @@ export function ProjectDetail({
             )}
           </Section>
 
-          <Section title="相关资料 / 交付物">
-            {model.deliverables.length === 0 ? (
+          <Section title="Production Review / 交付物">
+            {model.productionReviewItems.length === 0 ? (
               <EmptyReadState copy="当前项目没有可确认关联的 Manifest / Deliverable。" />
             ) : (
-              <ul className="space-y-2">
-                {model.deliverables.map(item => (
-                  <li
-                    className="flex items-center justify-between gap-3 rounded-md bg-foreground/4 px-3 py-2 text-xs"
-                    key={item.id}
-                  >
-                    <div className="min-w-0">
-                      <div className="truncate">
-                        {item.filename} · {item.sizeBytes} bytes
-                      </div>
-                      <div className="mt-1 text-[0.6875rem] text-(--ui-text-quaternary)">
-                        已提交 · {item.deliveryState === 'delivered' ? '已交付' : '待交付'} ·{' '}
-                        {item.reviewState === 'pending'
-                          ? '待人工验收'
-                          : item.reviewState === 'approved'
-                            ? '已验收'
-                            : '验收状态未设置'}
-                      </div>
-                    </div>
-                    <Button
-                      onClick={() => {
-                        setLocalAccessMessage(null)
-                        void localAccess.revealOutbox(item.workId).then(opened => {
-                          if (!opened) {
-                            setLocalAccessMessage('本机产物目录不可用；未尝试其他路径。')
-                          }
-                        })
-                      }}
-                      size="sm"
-                      type="button"
-                      variant="outline"
-                    >
-                      打开产物目录
-                    </Button>
-                  </li>
+              <div className="space-y-3">
+                {model.productionReviewItems.map(item => (
+                  <ProductionReviewCard
+                    item={item}
+                    key={item.deliverable.id}
+                    onOpenLocal={workId => {
+                      setLocalAccessMessage(null)
+                      void localAccess.revealOutbox(workId).then(opened => {
+                        if (!opened) {
+                          setLocalAccessMessage('本机产物目录不可用；未尝试其他路径。')
+                        }
+                      })
+                    }}
+                  />
                 ))}
-              </ul>
+              </div>
             )}
             {localAccessMessage && <p className="mt-2 text-xs text-destructive">{localAccessMessage}</p>}
           </Section>

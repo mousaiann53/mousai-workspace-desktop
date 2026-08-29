@@ -1,4 +1,4 @@
-export type DomainSource = 'manifest' | 'workbridge' | 'workdata'
+export type DomainSource = 'control' | 'manifest' | 'workbridge' | 'workdata'
 
 export interface SourceReference {
   readonly system: DomainSource
@@ -124,6 +124,37 @@ export interface Deliverable {
   readonly source: SourceReference
 }
 
+export type ProductionAuthority = 'control' | 'workbridge'
+export type ProductionGateState = 'blocked' | 'in_production' | 'pending_review' | 'ready_for_production' | 'unknown'
+
+/**
+ * Optional authority projection supplied by the existing Workspace snapshot.
+ * A missing projection is not a synthetic production record: the UI must keep
+ * its Control/WorkBridge-owned facts unset until the backend supplies them.
+ */
+export interface ProductionReview {
+  readonly id: string
+  readonly workId: string
+  readonly deliverableId: string | null
+  readonly relativePath: string | null
+  readonly sha256: string | null
+  readonly authority: ProductionAuthority
+  readonly gateState: ProductionGateState
+  readonly gateStatusRaw: string | null
+  readonly productionStatus: string | null
+  readonly currentExecutor: string | null
+  readonly scopeApproved: boolean | null
+  readonly approvedScopeVersion: string | null
+  readonly missingInformation: readonly string[] | null
+  readonly decisionsRequired: readonly string[] | null
+  readonly mousaiReviewComment: string | null
+  readonly revision: string | null
+  readonly finalVersion: string | null
+  readonly skillCandidateStatus: string | null
+  readonly updatedAt: string | null
+  readonly source: SourceReference
+}
+
 export interface Activity {
   readonly id: string
   readonly projectRef: string | null
@@ -138,6 +169,7 @@ export interface WorkspaceSnapshot {
   readonly tasks: readonly Task[]
   readonly events: readonly Event[]
   readonly deliverables: readonly Deliverable[]
+  readonly productionReviews: readonly ProductionReview[]
   readonly activities: readonly Activity[]
   readonly loadedAt: string
 }

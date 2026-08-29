@@ -16,6 +16,7 @@ function envelope(overrides: Record<string, unknown> = {}) {
     tasks: [],
     events: [],
     deliverables: [],
+    productionReviews: [],
     ...overrides
   }
 }
@@ -33,6 +34,14 @@ describe('secure Workspace plugin REST transport', () => {
               类型: '教学',
               未知字段: 'must not enter the domain'
             }
+          }
+        ],
+        productionReviews: [
+          {
+            review_id: 'review-transport',
+            work_id: 'WORK-001',
+            authority: 'control',
+            gate_status: 'blocked'
           }
         ]
       })
@@ -59,6 +68,11 @@ describe('secure Workspace plugin REST transport', () => {
       risk: null
     })
     expect(result.snapshot.loadedAt).toBe('2026-08-29T01:02:03.000Z')
+    expect(result.snapshot.productionReviews[0]).toMatchObject({
+      id: 'review-transport',
+      authority: 'control',
+      gateState: 'blocked'
+    })
     expect(JSON.stringify(result)).not.toContain('未知字段')
   })
 
@@ -69,7 +83,8 @@ describe('secure Workspace plugin REST transport', () => {
     ['non-array projects', envelope({ projects: {} })],
     ['non-array tasks', envelope({ tasks: null })],
     ['non-array events', envelope({ events: 'events' })],
-    ['non-array deliverables', envelope({ deliverables: 1 })]
+    ['non-array deliverables', envelope({ deliverables: 1 })],
+    ['non-array productionReviews', envelope({ productionReviews: {} })]
   ])('rejects a malformed backend contract: %s', async (_label, response) => {
     const transport = createPluginWorkspaceReadTransport(vi.fn().mockResolvedValue(response))
 

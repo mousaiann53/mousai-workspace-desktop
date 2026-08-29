@@ -1,4 +1,5 @@
 import { adaptManifest } from './adapter-manifest'
+import { adaptProductionReviews } from './adapter-production-review'
 import { adaptWorkBridgeJobs } from './adapter-workbridge'
 import { adaptWorkDataSnapshot } from './adapter-workdata'
 import type { AdapterIssue, Task, WorkspaceSnapshot } from './domain'
@@ -13,6 +14,7 @@ export interface RawWorkspaceReadSnapshot {
   }
   readonly workbridgeJobs?: unknown
   readonly manifests?: readonly unknown[]
+  readonly productionReviews?: unknown
   readonly loadedAt?: string
 }
 
@@ -71,8 +73,12 @@ export async function readWorkspaceSnapshot(
   const workdata = adaptWorkDataSnapshot(raw.workdata)
   const workbridge = adaptWorkBridgeJobs(raw.workbridgeJobs ?? [])
   const manifestResults = (raw.manifests ?? []).map(adaptManifest)
+  const productionReviews = adaptProductionReviews(raw.productionReviews ?? [])
   const loadedAtCandidate = raw.loadedAt ? new Date(raw.loadedAt) : new Date()
-  const loadedAt = Number.isNaN(loadedAtCandidate.getTime()) ? new Date().toISOString() : loadedAtCandidate.toISOString()
+
+  const loadedAt = Number.isNaN(loadedAtCandidate.getTime())
+    ? new Date().toISOString()
+    : loadedAtCandidate.toISOString()
 
   return {
     snapshot: {
@@ -80,9 +86,15 @@ export async function readWorkspaceSnapshot(
       tasks: mergeTasks(workdata.data.tasks, workbridge.data),
       events: [],
       deliverables: manifestResults.flatMap(result => result.data),
+      productionReviews: productionReviews.data,
       activities: [],
       loadedAt
     },
-    issues: [...workdata.issues, ...workbridge.issues, ...manifestResults.flatMap(result => result.issues)]
+    issues: [
+      ...workdata.issues,
+      ...workbridge.issues,
+      ...manifestResults.flatMap(result => result.issues),
+      ...productionReviews.issues
+    ]
   }
 }

@@ -75,6 +75,7 @@ function snapshot(projects: readonly Project[], tasks: readonly Task[]): Workspa
     tasks,
     events: [],
     deliverables: [],
+    productionReviews: [],
     activities: [],
     loadedAt: '2026-08-29T01:00:00Z'
   }
@@ -87,13 +88,19 @@ describe('project detail presentation model', () => {
     const model = projectDetailModel(
       snapshot(
         [source],
-        [task('WORK-ID', source.id), task('WORK-NAME', source.name), task('WORK-BAD', '跟岗挖掘手册'), task('WORK-NONE', null)]
+        [
+          task('WORK-ID', source.id),
+          task('WORK-NAME', source.name),
+          task('WORK-BAD', '跟岗挖掘手册'),
+          task('WORK-NONE', null)
+        ]
       ),
       source.id
     )
 
     expect(model?.tasks.map(item => item.id)).toEqual(['WORK-ID', 'WORK-NAME'])
     expect(model?.deliverables).toEqual([])
+    expect(model?.productionReviewItems).toEqual([])
     expect(model?.activities).toEqual([])
   })
 

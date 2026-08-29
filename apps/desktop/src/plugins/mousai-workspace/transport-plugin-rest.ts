@@ -22,6 +22,7 @@ interface WorkspaceSnapshotEnvelope {
   readonly tasks: readonly unknown[]
   readonly events: readonly unknown[]
   readonly deliverables: readonly unknown[]
+  readonly productionReviews: readonly unknown[]
 }
 
 export class WorkspaceSnapshotContractError extends Error {
@@ -58,13 +59,18 @@ function parseEnvelope(value: unknown): WorkspaceSnapshotEnvelope {
     }
   }
 
+  if (value.productionReviews !== undefined && !Array.isArray(value.productionReviews)) {
+    throw new WorkspaceSnapshotContractError('Workspace snapshot productionReviews is not an array.')
+  }
+
   return {
     schemaVersion: WORKSPACE_SNAPSHOT_SCHEMA_VERSION,
     generatedAt: new Date(value.generatedAt).toISOString(),
     projects: value.projects as readonly unknown[],
     tasks: value.tasks as readonly unknown[],
     events: value.events as readonly unknown[],
-    deliverables: value.deliverables as readonly unknown[]
+    deliverables: value.deliverables as readonly unknown[],
+    productionReviews: Array.isArray(value.productionReviews) ? value.productionReviews : []
   }
 }
 
@@ -162,6 +168,7 @@ export function createPluginWorkspaceReadTransport(
           taskRecords: envelope.tasks
         },
         manifests: envelope.deliverables,
+        productionReviews: envelope.productionReviews,
         loadedAt: envelope.generatedAt
       }
     },

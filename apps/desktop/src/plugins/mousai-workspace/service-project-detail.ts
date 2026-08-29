@@ -1,4 +1,5 @@
 import type { Activity, Deliverable, Event, Project, Task, WorkspaceSnapshot } from './domain'
+import { buildProductionReviewItems, type ProductionReviewItem } from './service-production-review'
 import { projectMatchesRef, tasksForProject } from './service-project-gallery'
 
 export type TimelineLayer = 'deadline' | 'event' | 'milestone' | 'stage'
@@ -22,6 +23,7 @@ export interface ProjectDetailModel {
   readonly project: Project
   readonly tasks: readonly Task[]
   readonly deliverables: readonly Deliverable[]
+  readonly productionReviewItems: readonly ProductionReviewItem[]
   readonly activities: readonly Activity[]
   readonly timeline: readonly TimelineLayerModel[]
 }
@@ -145,13 +147,15 @@ export function projectDetailModel(
   )
 
   const activities = snapshot.activities.filter(
-    activity => projectMatchesRef(project, activity.projectRef) || (activity.workId ? taskIds.has(activity.workId) : false)
+    activity =>
+      projectMatchesRef(project, activity.projectRef) || (activity.workId ? taskIds.has(activity.workId) : false)
   )
 
   return {
     project,
     tasks,
     deliverables,
+    productionReviewItems: buildProductionReviewItems(project, tasks, deliverables, snapshot.productionReviews),
     activities,
     timeline: buildProjectTimeline(project, tasks, snapshot.events, now)
   }
