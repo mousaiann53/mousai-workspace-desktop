@@ -131,11 +131,16 @@ function ProjectsPage({
     <WorkspacePage eyebrow="WORKSPACE" title={projectId ? '项目详情' : '项目'}>
       {projectId ? (
         <ProjectDetail
+          focusPanel={panel}
+          focusWorkId={workId}
           gatewayState={gatewayState}
-          initialTaskId={panel === 'task' ? workId : null}
           localAccess={localAccess}
           mutationTransport={transport}
           onBack={() => navigateWorkspace('/workspace/projects')}
+          onClearFocus={() => navigateWorkspace(projectWorkspaceLink(projectId))}
+          onNavigateFocus={(nextWorkId, nextPanel) =>
+            navigateWorkspace(projectWorkspaceLink(projectId, { workId: nextWorkId, panel: nextPanel }))
+          }
           projectId={projectId}
           transport={transport}
         />

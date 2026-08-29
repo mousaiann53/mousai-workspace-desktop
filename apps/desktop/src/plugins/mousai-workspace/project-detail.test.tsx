@@ -6,6 +6,7 @@ import { ProjectDetail } from './project-detail'
 import type { WorkspaceProductionActionTransport } from './service-production-actions'
 import { WorkspaceTaskMutationError, type WorkspaceTaskMutationTransport } from './service-task-mutation'
 import type { RawWorkspaceReadSnapshot, WorkspaceReadTransport } from './service-workspace-read'
+import type { WorkspaceFocusPanel } from './workspace-links'
 
 function snapshot(taskOverrides: Record<string, unknown> = {}): RawWorkspaceReadSnapshot {
   return {
@@ -87,24 +88,35 @@ function mutationTransport(overrides: Partial<ProjectMutationTransport> = {}): P
   }
 }
 
-function renderDetail(source = transport(), gatewayState = 'open', mutations = mutationTransport()) {
+function renderDetail(
+  source = transport(),
+  gatewayState = 'open',
+  mutations = mutationTransport(),
+  focus: { readonly panel: WorkspaceFocusPanel; readonly workId: string } | null = null
+) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const onBack = vi.fn()
+  const onClearFocus = vi.fn()
+  const onNavigateFocus = vi.fn()
 
   const rendered = render(
     <QueryClientProvider client={client}>
       <ProjectDetail
+        focusPanel={focus?.panel}
+        focusWorkId={focus?.workId}
         gatewayState={gatewayState}
         localAccess={{ revealOutbox: vi.fn(async () => true) }}
         mutationTransport={mutations}
         onBack={onBack}
+        onClearFocus={onClearFocus}
+        onNavigateFocus={onNavigateFocus}
         projectId="PROJECT-001"
         transport={source}
       />
     </QueryClientProvider>
   )
 
-  return { ...rendered, client, mutations, onBack }
+  return { ...rendered, client, mutations, onBack, onClearFocus, onNavigateFocus }
 }
 
 describe('ProjectDetail', () => {
@@ -151,6 +163,78 @@ describe('ProjectDetail', () => {
     expect(await screen.findByText('WORK-002 · 受控任务事实')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: /关闭|Close/ }))
     await waitFor(() => expect(screen.queryByText('WORK-002 · 受控任务事实')).toBeNull())
+  })
+
+  it('restores a task deep link on mount and remount without redirecting home', async () => {
+    const first = renderDetail(transport(), 'open', mutationTransport(), { panel: 'task', workId: 'WORK-002' })
+
+    expect(await screen.findByText('WORK-002 · 受控任务事实')).toBeTruthy()
+    expect(first.onBack).not.toHaveBeenCalled()
+    first.unmount()
+
+    const second = renderDetail(transport(), 'open', mutationTransport(), { panel: 'task', workId: 'WORK-002' })
+
+    expect(await screen.findByText('WORK-002 · 受控任务事实')).toBeTruthy()
+    expect(second.onBack).not.toHaveBeenCalled()
+  })
+
+  it('shows a real not-found state for an unknown deep-link target', async () => {
+    const result = renderDetail(transport(), 'open', mutationTransport(), {
+      panel: 'deliverable',
+      workId: 'WORK-MISSING'
+    })
+
+    expect(await screen.findByText('目标任务 / 交付物不存在')).toBeTruthy()
+    expect(screen.getByText(/没有跳回首页/)).toBeTruthy()
+    expect(result.onBack).not.toHaveBeenCalled()
+  })
+
+  it('navigates from a production card to history and skill evidence with stable IDs', async () => {
+    const result = renderDetail(transport(), 'open', mutationTransport(), {
+      panel: 'deliverable',
+      workId: 'WORK-001'
+    })
+
+    await screen.findByRole('heading', { name: '历史建筑活化利用' })
+    fireEvent.click(screen.getAllByRole('button', { name: '生产历史' })[0])
+    expect(result.onNavigateFocus).toHaveBeenCalledWith('WORK-001', 'history')
+    fireEvent.click(screen.getAllByRole('button', { name: 'Skill evidence' })[0])
+    expect(result.onNavigateFocus).toHaveBeenCalledWith('WORK-001', 'skill')
+  })
+
+  it('navigates from the task inspector to its canonical deliverable', async () => {
+    const raw = snapshot()
+
+    const source = transport(
+      vi.fn(async () => ({
+        ...raw,
+        manifests: [
+          {
+            work_id: 'WORK-001',
+            file_count: 1,
+            total_size_bytes: 10,
+            local_output_root: 'H:\\MousaiWork\\outbox\\WORK-001',
+            files: [
+              {
+                filename: 'final.pdf',
+                relative_path: 'final.pdf',
+                extension: '.pdf',
+                size_bytes: 10,
+                sha256: 'a'.repeat(64),
+                modified_at: '2026-08-29T02:00:00Z'
+              }
+            ]
+          }
+        ]
+      }))
+    )
+
+    const result = renderDetail(source)
+
+    await screen.findByRole('heading', { name: '历史建筑活化利用' })
+    fireEvent.click(screen.getByRole('button', { name: /Phase 1C Base 闭环测试/ }))
+    fireEvent.click(await screen.findByRole('button', { name: '查看交付物' }))
+    expect(result.onNavigateFocus).toHaveBeenCalledWith('WORK-001', 'deliverable')
   })
 
   it('waits on disconnect and refetches after reconnect', async () => {

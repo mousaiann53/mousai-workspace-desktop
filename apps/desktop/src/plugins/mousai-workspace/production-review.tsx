@@ -8,6 +8,7 @@ import type { WorkspaceProductionActionTransport } from './service-production-ac
 import type { ProductionReviewItem } from './service-production-review'
 import { buildSkillEvidence } from './service-skill-evidence'
 import { SkillEvidence } from './skill-evidence'
+import type { WorkspaceFocusPanel } from './workspace-links'
 
 const GATE_LABELS: Readonly<Record<ProductionGateState, string>> = {
   INPUT_REQUIRED: '需要输入（INPUT_REQUIRED）',
@@ -132,11 +133,17 @@ function ReviewFact({ label, children }: { label: string; children: string }) {
 
 export function ProductionReviewCard({
   item,
+  focusPanel,
+  focused = false,
+  onNavigatePanel,
   onOpenLocal,
   onRefresh,
   transport
 }: {
   item: ProductionReviewItem
+  focusPanel?: WorkspaceFocusPanel | null
+  focused?: boolean
+  onNavigatePanel?: (panel: Exclude<WorkspaceFocusPanel, 'task'>) => void
   onOpenLocal: (workId: string) => void
   onRefresh: () => Promise<unknown>
   transport: WorkspaceProductionActionTransport
@@ -148,7 +155,13 @@ export function ProductionReviewCard({
   const skillEvidence = buildSkillEvidence(item)
 
   return (
-    <article className="rounded-lg border border-(--ui-stroke-quaternary) p-4">
+    <article
+      aria-current={focused ? 'location' : undefined}
+      className={`rounded-lg border p-4 ${
+        focused ? 'border-primary/60 ring-1 ring-primary/25' : 'border-(--ui-stroke-quaternary)'
+      }`}
+      data-work-id={task.id}
+    >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <h3 className="truncate text-sm font-medium">{task.title}</h3>
@@ -164,6 +177,26 @@ export function ProductionReviewCard({
           </span>
         </div>
       </div>
+
+      <nav aria-label={`交付物导航：${task.id}`} className="mt-3 flex flex-wrap gap-2">
+        {(
+          [
+            ['deliverable', '交付物'],
+            ['history', '生产历史'],
+            ['skill', 'Skill evidence']
+          ] as const
+        ).map(([panel, label]) => (
+          <button
+            aria-pressed={focused && focusPanel === panel}
+            className="rounded-md border border-(--ui-stroke-quaternary) px-2 py-1 text-[0.6875rem] text-(--ui-text-tertiary) hover:bg-(--ui-hover-overlay) hover:text-foreground"
+            key={panel}
+            onClick={() => onNavigatePanel?.(panel)}
+            type="button"
+          >
+            {label}
+          </button>
+        ))}
+      </nav>
 
       {!review && (
         <p className="mt-3 rounded-md bg-foreground/4 px-3 py-2 text-xs text-(--ui-text-tertiary)">
@@ -210,7 +243,11 @@ export function ProductionReviewCard({
         <ReviewFact label="Gate 事件">{review ? `${review.events.length} 条` : '未设置 / 等待输入'}</ReviewFact>
       </dl>
 
-      <div className="mt-4 border-t border-(--ui-stroke-quaternary) pt-3">
+      <div
+        className={`mt-4 border-t border-(--ui-stroke-quaternary) pt-3 ${
+          focused && focusPanel === 'deliverable' ? 'rounded-md bg-primary/5 px-2 pb-2' : ''
+        }`}
+      >
         {deliverables.length ? (
           <div className="space-y-2">
             {deliverables.map(deliverable => (
@@ -231,7 +268,11 @@ export function ProductionReviewCard({
         )}
       </div>
 
-      <div className="mt-4 border-t border-(--ui-stroke-quaternary) pt-3">
+      <div
+        className={`mt-4 border-t border-(--ui-stroke-quaternary) pt-3 ${
+          focused && focusPanel === 'skill' ? 'rounded-md bg-primary/5 px-2 pb-2' : ''
+        }`}
+      >
         <div className="mb-2 text-[0.6875rem] text-(--ui-text-quaternary)">Skill candidate evidence</div>
         <SkillEvidence item={item} />
       </div>
@@ -241,7 +282,11 @@ export function ProductionReviewCard({
         <ArtifactComparison item={item} />
       </div>
 
-      <div className="mt-4 border-t border-(--ui-stroke-quaternary) pt-3">
+      <div
+        className={`mt-4 border-t border-(--ui-stroke-quaternary) pt-3 ${
+          focused && focusPanel === 'history' ? 'rounded-md bg-primary/5 px-2 pb-2' : ''
+        }`}
+      >
         <div className="mb-2 text-[0.6875rem] text-(--ui-text-quaternary)">Revision / Acceptance History</div>
         <ProductionHistory review={review} />
       </div>

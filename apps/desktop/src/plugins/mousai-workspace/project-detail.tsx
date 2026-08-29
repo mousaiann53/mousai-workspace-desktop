@@ -30,6 +30,7 @@ import {
   type WorkspaceReadTransport,
   WorkspaceTransportUnavailableError
 } from './service-workspace-read'
+import type { WorkspaceFocusPanel } from './workspace-links'
 
 const TASK_STATUS_LABELS: Readonly<Record<Task['status'], string>> = {
   archived: '已归档',
@@ -184,6 +185,7 @@ function TaskInspector({
   deliverables,
   mutationTransport,
   onClose,
+  onOpenDeliverable,
   onRefresh,
   onSelectTask,
   open,
@@ -195,6 +197,7 @@ function TaskInspector({
   deliverables: readonly Deliverable[]
   mutationTransport: WorkspaceTaskMutationTransport
   onClose: () => void
+  onOpenDeliverable: (workId: string) => void
   onRefresh: () => Promise<unknown>
   onSelectTask: (taskId: string) => void
   open: boolean
@@ -509,6 +512,11 @@ function TaskInspector({
                     />
                   </div>
                   <div className="mt-5 flex flex-wrap gap-2 border-t border-(--ui-stroke-quaternary) pt-4">
+                    {taskDeliverables.length > 0 && (
+                      <Button onClick={() => onOpenDeliverable(task.id)} size="sm" variant="secondary">
+                        查看交付物
+                      </Button>
+                    )}
                     <Button
                       disabled={pending || !capability?.canEdit}
                       onClick={() => setMode('edit')}
@@ -597,19 +605,25 @@ function ReadState({
 }
 
 export function ProjectDetail({
+  focusPanel,
+  focusWorkId,
   gatewayState,
-  initialTaskId,
   localAccess,
   mutationTransport,
   onBack,
+  onClearFocus,
+  onNavigateFocus,
   projectId,
   transport
 }: {
+  focusPanel?: WorkspaceFocusPanel | null
+  focusWorkId?: string | null
   gatewayState: string
-  initialTaskId?: string | null
   localAccess: LocalDeliverableAccess
   mutationTransport: WorkspaceTaskMutationTransport & WorkspaceProductionActionTransport
   onBack: () => void
+  onClearFocus?: () => void
+  onNavigateFocus?: (workId: string, panel: WorkspaceFocusPanel) => void
   projectId: string
   transport: WorkspaceReadTransport
 }) {
@@ -633,10 +647,10 @@ export function ProjectDetail({
   const selectedTask = model?.tasks.find(task => task.id === selectedTaskId) ?? null
 
   useEffect(() => {
-    if (initialTaskId && model?.tasks.some(task => task.id === initialTaskId)) {
-      setSelectedTaskId(initialTaskId)
+    if (focusPanel === 'task' && focusWorkId && model?.tasks.some(task => task.id === focusWorkId)) {
+      setSelectedTaskId(focusWorkId)
     }
-  }, [initialTaskId, model])
+  }, [focusPanel, focusWorkId, model])
 
   if (gatewayState !== 'open') {
     return <ReadState copy="Remote Gateway 恢复后将重新读取当前项目。" title="等待 Gateway 连接" />
@@ -669,6 +683,7 @@ export function ProjectDetail({
   }
 
   const { project } = model
+  const focusMissing = Boolean(focusWorkId && !model.tasks.some(task => task.id === focusWorkId))
 
   return (
     <div>
@@ -706,6 +721,16 @@ export function ProjectDetail({
         </dl>
       </header>
 
+      {focusMissing && (
+        <div className="mt-4">
+          <ReadState
+            action={{ label: '返回项目详情', onClick: () => onClearFocus?.() }}
+            copy={`当前项目中不存在 ${focusWorkId}；没有跳回首页或展示其他任务。`}
+            title="目标任务 / 交付物不存在"
+          />
+        </div>
+      )}
+
       <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1.45fr)_minmax(18rem,0.75fr)]">
         <div className="space-y-7">
           <Section title="当前任务">
@@ -717,7 +742,10 @@ export function ProjectDetail({
                   <button
                     className="grid w-full gap-2 rounded-lg border border-(--ui-stroke-quaternary) p-3 text-left hover:bg-(--ui-hover-overlay) sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center"
                     key={task.id}
-                    onClick={() => setSelectedTaskId(task.id)}
+                    onClick={() => {
+                      setSelectedTaskId(task.id)
+                      onNavigateFocus?.(task.id, 'task')
+                    }}
                     type="button"
                   >
                     <div className="min-w-0">
@@ -756,8 +784,11 @@ export function ProjectDetail({
               <div className="space-y-3">
                 {model.productionReviewItems.map(item => (
                   <ProductionReviewCard
+                    focused={focusWorkId === item.task.id && focusPanel !== 'task'}
+                    focusPanel={focusWorkId === item.task.id ? focusPanel : null}
                     item={item}
                     key={item.task.id}
+                    onNavigatePanel={panel => onNavigateFocus?.(item.task.id, panel)}
                     onOpenLocal={workId => {
                       setLocalAccessMessage(null)
                       void localAccess.revealOutbox(workId).then(opened => {
@@ -810,7 +841,11 @@ export function ProjectDetail({
       <TaskInspector
         deliverables={model.deliverables}
         mutationTransport={mutationTransport}
-        onClose={() => setSelectedTaskId(null)}
+        onClose={() => {
+          setSelectedTaskId(null)
+          onClearFocus?.()
+        }}
+        onOpenDeliverable={workId => onNavigateFocus?.(workId, 'deliverable')}
         onRefresh={() => result.refetch()}
         onSelectTask={setSelectedTaskId}
         open={selectedTask !== null}
