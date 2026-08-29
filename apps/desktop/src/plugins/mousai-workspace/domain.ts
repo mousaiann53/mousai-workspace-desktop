@@ -49,6 +49,8 @@ export interface Project {
   readonly source: SourceReference
 }
 
+// V1 keeps the approved “搁置” semantics on `archived` / 已归档. A separate
+// shelved enum is a post-V1 candidate and must not silently expand WorkData.
 export type TaskStatus =
   | 'archived'
   | 'classified'
