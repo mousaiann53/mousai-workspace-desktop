@@ -100,9 +100,7 @@ export function adaptWorkBridgeJobs(payload: unknown): AdapterResult<readonly Ta
     records = [payload.bundle]
   }
 
-  const tasks = records
-    .map(record => adaptJob(record, issues, seen))
-    .filter((task): task is Task => task !== null)
+  const tasks = records.map(record => adaptJob(record, issues, seen)).filter((task): task is Task => task !== null)
 
   return { data: tasks, issues }
 }

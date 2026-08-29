@@ -65,9 +65,7 @@ function ProjectCard({
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="text-[0.6875rem] font-medium tracking-[0.12em] text-(--ui-text-quaternary)">
-            {project.id}
-          </div>
+          <div className="text-[0.6875rem] font-medium tracking-[0.12em] text-(--ui-text-quaternary)">{project.id}</div>
           <h3 className="mt-1 truncate text-sm font-medium" title={project.name}>
             {project.name}
           </h3>
