@@ -15,6 +15,9 @@ export function adaptManifest(payload: unknown): AdapterResult<readonly Delivera
 
   const workId = asTrimmedText(payload.work_id)
   const files = payload.files
+  const declaredFileCount = asNullableNumber(payload.file_count)
+  const declaredTotalSize = asNullableNumber(payload.total_size_bytes)
+  const localOutputRoot = asTrimmedText(payload.local_output_root)
 
   if (!workId) {
     issues.push(issue('manifest', 'missing_id', 'Manifest has no work_id.'))
@@ -24,6 +27,19 @@ export function adaptManifest(payload: unknown): AdapterResult<readonly Delivera
 
   if (!Array.isArray(files)) {
     issues.push(issue('manifest', 'invalid_field', 'Manifest files is not an array.', workId))
+
+    return { data: [], issues }
+  }
+
+  if (
+    declaredFileCount === null ||
+    !Number.isInteger(declaredFileCount) ||
+    declaredFileCount !== files.length ||
+    declaredTotalSize === null ||
+    !Number.isInteger(declaredTotalSize) ||
+    declaredTotalSize < 0
+  ) {
+    issues.push(issue('manifest', 'invalid_field', 'Manifest count or total size is invalid.', workId))
 
     return { data: [], issues }
   }
@@ -59,6 +75,7 @@ export function adaptManifest(payload: unknown): AdapterResult<readonly Delivera
       !validRelativePath ||
       relativePath.split('/').at(-1) !== filename ||
       !extension ||
+      !filename.toLocaleLowerCase().endsWith(extension.toLocaleLowerCase()) ||
       !sha256 ||
       !SHA256.test(sha256) ||
       modifiedAt === null ||
@@ -88,8 +105,16 @@ export function adaptManifest(payload: unknown): AdapterResult<readonly Delivera
       sizeBytes,
       sha256,
       modifiedAt,
+      localOutputRoot,
       source: { system: 'manifest', recordId: relativePath }
     })
+  }
+
+  if (deliverables.reduce((sum, deliverable) => sum + deliverable.sizeBytes, 0) !== declaredTotalSize) {
+    return {
+      data: [],
+      issues: [...issues, issue('manifest', 'invalid_field', 'Manifest total size does not match its files.', workId)]
+    }
   }
 
   return { data: deliverables, issues }

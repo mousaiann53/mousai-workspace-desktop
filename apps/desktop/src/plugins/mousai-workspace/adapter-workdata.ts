@@ -39,6 +39,10 @@ const TASK_STATUSES: Readonly<Record<string, TaskStatus>> = {
   待验收: 'review',
   已完成: 'completed',
   已归档: 'archived',
+  已领取: 'claimed',
+  本机处理中: 'local_processing',
+  模型失败: 'model_failed',
+  执行失败: 'execution_failed',
   资料缺失: 'material_missing',
   需要决策: 'decision_required'
 }

@@ -52,11 +52,15 @@ export interface Project {
 export type TaskStatus =
   | 'archived'
   | 'classified'
+  | 'claimed'
   | 'cloud_processing'
   | 'completed'
   | 'decision_required'
+  | 'execution_failed'
   | 'inbox'
+  | 'local_processing'
   | 'material_missing'
+  | 'model_failed'
   | 'review'
   | 'waiting_local'
   | 'unknown'
@@ -100,6 +104,7 @@ export interface Deliverable {
   readonly sizeBytes: number
   readonly sha256: string
   readonly modifiedAt: string
+  readonly localOutputRoot: string | null
   readonly source: SourceReference
 }
 
