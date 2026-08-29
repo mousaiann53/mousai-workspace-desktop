@@ -1,8 +1,12 @@
-import { Codicon, type HermesPlugin, host, type RouteContribution, ROUTES_AREA } from '@hermes/plugin-sdk'
+import { Codicon, type HermesPlugin, host, type RouteContribution, ROUTES_AREA, useValue } from '@hermes/plugin-sdk'
 import { type ReactNode } from 'react'
+
+import { ProjectGallery } from './project-gallery'
+import { createUnavailableWorkspaceReadTransport } from './service-workspace-read'
 
 const ID = 'mousai-workspace'
 const DEFAULT_ROUTE = '/workspace'
+const workspaceReadTransport = createUnavailableWorkspaceReadTransport()
 
 const WORKSPACE_SECTIONS = [
   { id: 'dashboard', label: '看板', path: DEFAULT_ROUTE, icon: 'dashboard' },
@@ -76,22 +80,21 @@ function DashboardPage() {
   return (
     <WorkspacePage eyebrow="WORKSPACE" title="看板">
       <div className="grid gap-3 md:grid-cols-2">
-        <EmptyPanel title="最近活跃项目" copy="尚未接入 Workspace Domain Adapter。M2-B 不显示演示项目或伪造进度。" />
-        <EmptyPanel title="临近 DDL 与风险" copy="暂无可回读的 Workspace 数据。接入真实项目数据后在这里显示 DDL 与风险。" />
-        <EmptyPanel title="今日 / 下一步" copy="任务数据将在后续数据接入阶段回读；当前保持真实空状态。" />
-        <EmptyPanel title="本周工作摘要" copy="尚无可汇总的 Workspace 活动数据。" />
+        <EmptyPanel copy="尚未接入 Workspace Domain Adapter。M2-B 不显示演示项目或伪造进度。" title="最近活跃项目" />
+        <EmptyPanel copy="暂无可回读的 Workspace 数据。接入真实项目数据后在这里显示 DDL 与风险。" title="临近 DDL 与风险" />
+        <EmptyPanel copy="任务数据将在后续数据接入阶段回读；当前保持真实空状态。" title="今日 / 下一步" />
+        <EmptyPanel copy="尚无可汇总的 Workspace 活动数据。" title="本周工作摘要" />
       </div>
     </WorkspacePage>
   )
 }
 
 function ProjectsPage() {
+  const gatewayState = useValue(host.state.gateway)
+
   return (
     <WorkspacePage eyebrow="WORKSPACE" title="项目">
-      <EmptyPanel
-        title="项目数据尚未接入"
-        copy="这里将承载真实 Project Gallery。M2-B 先完成可稳定导航的页面壳；WorkData 映射、领域模型与真实项目数据在 M3 接入。"
-      />
+      <ProjectGallery gatewayState={gatewayState} transport={workspaceReadTransport} />
     </WorkspacePage>
   )
 }
@@ -99,7 +102,7 @@ function ProjectsPage() {
 function PendingPage({ section }: { section: WorkspaceSection }) {
   return (
     <WorkspacePage eyebrow="WORKSPACE" title={section.label}>
-      <EmptyPanel title="尚未建设" copy="该入口已经纳入 Workspace 路由，但本阶段不提前扩张功能范围。" />
+      <EmptyPanel copy="该入口已经纳入 Workspace 路由，但本阶段不提前扩张功能范围。" title="尚未建设" />
     </WorkspacePage>
   )
 }
@@ -152,6 +155,7 @@ const plugin: HermesPlugin = {
 
     if (typeof host.paneVisibility === 'function') {
       const visible = host.paneVisibility(`${ID}:pane`)
+
       const stop = visible.listen(isVisible => {
         if (isVisible) {
           host.navigate(lastWorkspaceRoute)
