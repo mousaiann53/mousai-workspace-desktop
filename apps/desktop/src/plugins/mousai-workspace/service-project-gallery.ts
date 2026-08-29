@@ -37,10 +37,28 @@ export const PROJECT_HORIZON_LABELS: Readonly<Record<WorkHorizon, string>> = {
 const CLOSED_TASKS = new Set(['archived', 'completed'])
 
 export function projectCardModels(snapshot: WorkspaceSnapshot): readonly ProjectCardModel[] {
+  const tasksByProjectRef = new Map<string, Task[]>()
+
+  for (const task of snapshot.tasks) {
+    const projectRef = task.projectRef?.trim().toLocaleLowerCase()
+
+    if (!projectRef) {
+      continue
+    }
+
+    const tasks = tasksByProjectRef.get(projectRef) ?? []
+
+    tasks.push(task)
+    tasksByProjectRef.set(projectRef, tasks)
+  }
+
   return snapshot.projects.map(project => {
-    const tasks = snapshot.tasks.filter(
-      task => task.projectRef === project.id || task.projectRef?.toLocaleLowerCase() === project.name.toLocaleLowerCase()
-    )
+    const related = [
+      ...(tasksByProjectRef.get(project.id.toLocaleLowerCase()) ?? []),
+      ...(tasksByProjectRef.get(project.name.toLocaleLowerCase()) ?? [])
+    ]
+
+    const tasks = [...new Map(related.map(task => [task.id, task])).values()]
 
     return {
       project,
