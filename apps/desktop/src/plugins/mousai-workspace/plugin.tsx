@@ -5,6 +5,7 @@ import { useSearchParams } from 'react-router'
 import { ProjectDetail } from './project-detail'
 import { ProjectGallery } from './project-gallery'
 import { createLocalDeliverableAccess, type LocalDeliverableAccess } from './service-local-deliverables'
+import type { WorkspaceProductionActionTransport } from './service-production-actions'
 import { createTaskCreateDraftStore, type TaskCreateDraftStore } from './service-task-create-draft'
 import type { WorkspaceTaskMutationTransport } from './service-task-mutation'
 import type { WorkspaceReadTransport } from './service-workspace-read'
@@ -102,7 +103,7 @@ function DashboardPage() {
   )
 }
 
-type WorkspaceTransport = WorkspaceReadTransport & WorkspaceTaskMutationTransport
+type WorkspaceTransport = WorkspaceReadTransport & WorkspaceTaskMutationTransport & WorkspaceProductionActionTransport
 
 function ProjectsPage({
   localAccess,

@@ -1,5 +1,13 @@
 import type { PluginRestOptions } from '@hermes/plugin-sdk'
 
+import { adaptProductionReviews } from './adapter-production-review'
+import type { ProductionApprovedScope, ProductionBundleMeta } from './domain'
+import {
+  type ProductionAction,
+  ProductionActionError,
+  type ProductionActionResult,
+  type WorkspaceProductionActionTransport
+} from './service-production-actions'
 import {
   type TaskCreateInput,
   type TaskEditChanges,
@@ -125,6 +133,66 @@ function mutationFailure(error: unknown): WorkspaceTaskMutationError {
   return new WorkspaceTaskMutationError(message, statusCode, code)
 }
 
+function productionFailure(error: unknown): ProductionActionError {
+  if (error instanceof ProductionActionError) {
+    return error
+  }
+
+  const statusCode =
+    typeof error === 'object' && error !== null && typeof (error as { statusCode?: unknown }).statusCode === 'number'
+      ? (error as { statusCode: number }).statusCode
+      : null
+
+  const message = error instanceof Error ? error.message : 'Production action failed.'
+  const codeMatch = message.match(/"code"\s*:\s*"([a-z0-9_]+)"/i)
+
+  return new ProductionActionError(message, statusCode, codeMatch?.[1] ?? 'production_action_failed')
+}
+
+function bundleMetaBody(meta: ProductionBundleMeta) {
+  return {
+    missing_information: meta.missingInformation,
+    decision_required: meta.decisionRequired,
+    input_sources: meta.inputSources,
+    output_requirements: meta.outputRequirements,
+    acceptance: meta.acceptanceCriteria,
+    ...(meta.deliverables ? { deliverables: meta.deliverables } : {}),
+    ...(meta.decisionNote ? { decision_note: meta.decisionNote } : {}),
+    ...(meta.dueDate ? { due_date: meta.dueDate } : {}),
+    revision: meta.revision,
+    ...(meta.revisionReason ? { revision_reason: meta.revisionReason } : {})
+  }
+}
+
+function approvedScopeBody(scope: ProductionApprovedScope) {
+  return {
+    scope_id: scope.scopeId,
+    version: scope.version,
+    items: scope.items,
+    approved_by: scope.approvedBy,
+    approved_at: scope.approvedAt,
+    scope_hash: scope.scopeHash
+  }
+}
+
+function parseProductionActionResult(value: unknown, action: ProductionAction): ProductionActionResult {
+  if (!isRecord(value) || !isRecord(value.production)) {
+    throw new ProductionActionError('Production action response is invalid.', null, 'invalid_response')
+  }
+
+  const adapted = adaptProductionReviews([value.production])
+
+  if (adapted.data.length !== 1 || adapted.issues.length !== 0) {
+    throw new ProductionActionError(
+      'Production action response violates ProductionReadModel.',
+      null,
+      'invalid_response'
+    )
+  }
+
+  return { action, production: adapted.data[0] }
+}
+
 /**
  * The production Workspace read door. `rest` is the official PluginContext
  * namespace: the renderer supplies neither an endpoint nor a credential, and
@@ -133,7 +201,7 @@ function mutationFailure(error: unknown): WorkspaceTaskMutationError {
 export function createPluginWorkspaceReadTransport(
   rest: PluginRest,
   options: { readonly timeoutMs?: number } = {}
-): WorkspaceReadTransport & WorkspaceTaskMutationTransport {
+): WorkspaceReadTransport & WorkspaceTaskMutationTransport & WorkspaceProductionActionTransport {
   const timeoutMs = options.timeoutMs ?? WORKSPACE_SNAPSHOT_TIMEOUT_MS
 
   async function mutate(path: string, method: 'PATCH' | 'POST', body: unknown): Promise<TaskMutationResult> {
@@ -141,6 +209,24 @@ export function createPluginWorkspaceReadTransport(
       return parseMutationResult(await rest<unknown>(path, { method, body, timeoutMs }))
     } catch (error) {
       throw mutationFailure(error)
+    }
+  }
+
+  async function productionAction(
+    workId: string,
+    action: ProductionAction,
+    body: unknown
+  ): Promise<ProductionActionResult> {
+    try {
+      const value = await rest<unknown>(`/tasks/${encodeURIComponent(workId)}/production/${action}`, {
+        method: 'POST',
+        body,
+        timeoutMs
+      })
+
+      return parseProductionActionResult(value, action)
+    } catch (error) {
+      throw productionFailure(error)
     }
   }
 
@@ -183,6 +269,45 @@ export function createPluginWorkspaceReadTransport(
     },
     completeTask(workId: string, request: TaskMutationMeta) {
       return mutate(`/tasks/${encodeURIComponent(workId)}/complete`, 'POST', request)
+    },
+    prepareProduction(workId: string, request: Parameters<WorkspaceProductionActionTransport['prepareProduction']>[1]) {
+      return productionAction(workId, 'prepare', {
+        actor: request.actor,
+        bundle_meta: bundleMetaBody(request.bundleMeta)
+      })
+    },
+    approveProductionScope(
+      workId: string,
+      request: Parameters<WorkspaceProductionActionTransport['approveProductionScope']>[1]
+    ) {
+      return productionAction(workId, 'scope', {
+        actor: request.actor,
+        approved_scope: approvedScopeBody(request.approvedScope),
+        bundle_meta: bundleMetaBody(request.bundleMeta)
+      })
+    },
+    startProduction(workId: string, request: Parameters<WorkspaceProductionActionTransport['startProduction']>[1]) {
+      return productionAction(workId, 'start', { actor: request.actor })
+    },
+    requestProductionRevision(
+      workId: string,
+      request: Parameters<WorkspaceProductionActionTransport['requestProductionRevision']>[1]
+    ) {
+      return productionAction(workId, 'revision', {
+        actor: request.actor,
+        revision: request.revision,
+        reason: request.reason,
+        reviewer_comment: request.reviewerComment
+      })
+    },
+    acceptProduction(workId: string, request: Parameters<WorkspaceProductionActionTransport['acceptProduction']>[1]) {
+      return productionAction(workId, 'accept', {
+        actor: request.actor,
+        acceptance: {
+          verdict: request.verdict,
+          ...(request.comment ? { comment: request.comment } : {})
+        }
+      })
     }
   })
 }

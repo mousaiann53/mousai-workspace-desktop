@@ -252,6 +252,9 @@ describe('Production Review adapter', () => {
         bundle_meta: {
           missing_information: [],
           decision_required: false,
+          input_sources: ['source-001'],
+          output_requirements: { formats: ['pdf'] },
+          acceptance: ['人工验收'],
           revision: 2,
           revision_reason: '人工批准范围'
         },

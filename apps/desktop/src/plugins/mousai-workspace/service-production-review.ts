@@ -1,14 +1,14 @@
 import type { Deliverable, ProductionReview, Project, Task } from './domain'
 
 export interface ProductionReviewItem {
-  readonly deliverable: Deliverable
+  readonly deliverables: readonly Deliverable[]
   readonly project: Project
   readonly review: ProductionReview | null
-  readonly task: Task | null
+  readonly task: Task
 }
 
-function reviewFor(deliverable: Deliverable, reviews: readonly ProductionReview[]): ProductionReview | null {
-  const workMatches = reviews.filter(review => review.workId === deliverable.workId)
+function reviewFor(task: Task, reviews: readonly ProductionReview[]): ProductionReview | null {
+  const workMatches = reviews.filter(review => review.workId === task.id)
 
   return workMatches.length === 1 ? workMatches[0] : null
 }
@@ -19,12 +19,10 @@ export function buildProductionReviewItems(
   deliverables: readonly Deliverable[],
   reviews: readonly ProductionReview[]
 ): readonly ProductionReviewItem[] {
-  const taskById = new Map(tasks.map(task => [task.id, task]))
-
-  return deliverables.map(deliverable => ({
-    deliverable,
+  return tasks.map(task => ({
+    deliverables: deliverables.filter(deliverable => deliverable.taskId === task.id || deliverable.workId === task.id),
     project,
-    task: taskById.get(deliverable.taskId) ?? taskById.get(deliverable.workId) ?? null,
-    review: reviewFor(deliverable, reviews)
+    task,
+    review: reviewFor(task, reviews)
   }))
 }

@@ -192,6 +192,172 @@ describe('secure Workspace plugin REST transport', () => {
     })
   })
 
+  it('uses five explicit typed production routes without renderer authentication fields', async () => {
+    const scope = {
+      scopeId: 'scope-001',
+      version: 1,
+      items: ['产物 A'],
+      approvedBy: 'Mousai',
+      approvedAt: '2026-08-29T03:00:00.000Z',
+      scopeHash: 'c'.repeat(64)
+    }
+
+    const bundleMeta = {
+      missingInformation: [],
+      decisionRequired: false,
+      inputSources: ['source-001'],
+      outputRequirements: { formats: ['pdf'] },
+      acceptanceCriteria: ['人工验收'],
+      deliverables: null,
+      decisionNote: null,
+      dueDate: '2026-09-01',
+      revision: 1,
+      revisionReason: '初始范围'
+    } as const
+
+    const rest = vi.fn(async (path: string) => {
+      const gateState = path.endsWith('/prepare')
+        ? 'WAITING_HUMAN_APPROVAL'
+        : path.endsWith('/scope')
+          ? 'APPROVED_SCOPE'
+          : path.endsWith('/start')
+            ? 'READY_FOR_PRODUCTION'
+            : path.endsWith('/revision')
+              ? 'REVISION_REQUIRED'
+              : 'ACCEPTED'
+
+      const hasScope = gateState !== 'WAITING_HUMAN_APPROVAL'
+
+      return {
+        production: {
+          work_id: 'WORK-001',
+          gate_state: gateState,
+          missing_information: [],
+          decision_required: false,
+          approved_scope: hasScope
+            ? {
+                scope_id: scope.scopeId,
+                version: scope.version,
+                items: scope.items,
+                approved_by: scope.approvedBy,
+                approved_at: scope.approvedAt,
+                scope_hash: scope.scopeHash
+              }
+            : null,
+          scope_history: hasScope
+            ? [
+                {
+                  scope_id: scope.scopeId,
+                  version: scope.version,
+                  items: scope.items,
+                  approved_by: scope.approvedBy,
+                  approved_at: scope.approvedAt,
+                  scope_hash: scope.scopeHash
+                }
+              ]
+            : [],
+          revision: gateState === 'REVISION_REQUIRED' ? 2 : null,
+          acceptance: gateState === 'ACCEPTED' ? { verdict: 'PASS', comment: '通过' } : null,
+          events: []
+        }
+      }
+    })
+
+    const transport = createPluginWorkspaceReadTransport(
+      rest as unknown as Parameters<typeof createPluginWorkspaceReadTransport>[0]
+    )
+
+    await transport.prepareProduction('WORK-001', { actor: 'Mousai', bundleMeta })
+    await transport.approveProductionScope('WORK-001', { actor: 'Mousai', approvedScope: scope, bundleMeta })
+    await transport.startProduction('WORK-001', { actor: 'Mousai' })
+    await transport.requestProductionRevision('WORK-001', {
+      actor: 'Mousai',
+      revision: 2,
+      reason: '需要修订',
+      reviewerComment: '请按意见修订'
+    })
+    await transport.acceptProduction('WORK-001', { actor: 'Mousai', verdict: 'PASS', comment: '通过' })
+
+    expect(rest).toHaveBeenNthCalledWith(1, '/tasks/WORK-001/production/prepare', {
+      method: 'POST',
+      body: {
+        actor: 'Mousai',
+        bundle_meta: {
+          missing_information: [],
+          decision_required: false,
+          input_sources: ['source-001'],
+          output_requirements: { formats: ['pdf'] },
+          acceptance: ['人工验收'],
+          due_date: '2026-09-01',
+          revision: 1,
+          revision_reason: '初始范围'
+        }
+      },
+      timeoutMs: WORKSPACE_SNAPSHOT_TIMEOUT_MS
+    })
+    expect(rest).toHaveBeenNthCalledWith(2, '/tasks/WORK-001/production/scope', {
+      method: 'POST',
+      body: {
+        actor: 'Mousai',
+        approved_scope: {
+          scope_id: 'scope-001',
+          version: 1,
+          items: ['产物 A'],
+          approved_by: 'Mousai',
+          approved_at: '2026-08-29T03:00:00.000Z',
+          scope_hash: 'c'.repeat(64)
+        },
+        bundle_meta: {
+          missing_information: [],
+          decision_required: false,
+          input_sources: ['source-001'],
+          output_requirements: { formats: ['pdf'] },
+          acceptance: ['人工验收'],
+          due_date: '2026-09-01',
+          revision: 1,
+          revision_reason: '初始范围'
+        }
+      },
+      timeoutMs: WORKSPACE_SNAPSHOT_TIMEOUT_MS
+    })
+    expect(rest).toHaveBeenNthCalledWith(3, '/tasks/WORK-001/production/start', {
+      method: 'POST',
+      body: { actor: 'Mousai' },
+      timeoutMs: WORKSPACE_SNAPSHOT_TIMEOUT_MS
+    })
+    expect(rest).toHaveBeenNthCalledWith(4, '/tasks/WORK-001/production/revision', {
+      method: 'POST',
+      body: {
+        actor: 'Mousai',
+        revision: 2,
+        reason: '需要修订',
+        reviewer_comment: '请按意见修订'
+      },
+      timeoutMs: WORKSPACE_SNAPSHOT_TIMEOUT_MS
+    })
+    expect(rest).toHaveBeenNthCalledWith(5, '/tasks/WORK-001/production/accept', {
+      method: 'POST',
+      body: { actor: 'Mousai', acceptance: { verdict: 'PASS', comment: '通过' } },
+      timeoutMs: WORKSPACE_SNAPSHOT_TIMEOUT_MS
+    })
+    expect(JSON.stringify(rest.mock.calls)).not.toMatch(/authorization|bearer|token/i)
+  })
+
+  it('preserves a canonical production 409 without reporting success', async () => {
+    const backend = Object.assign(
+      new Error('409: {"error":{"code":"illegal_transition","message":"WAITING_ACCEPTANCE required"}}'),
+      { statusCode: 409 }
+    )
+
+    const transport = createPluginWorkspaceReadTransport(vi.fn().mockRejectedValue(backend))
+
+    await expect(transport.startProduction('WORK-001', { actor: 'Mousai' })).rejects.toMatchObject({
+      statusCode: 409,
+      code: 'illegal_transition',
+      message: expect.stringContaining('WAITING_ACCEPTANCE required')
+    })
+  })
+
   it('preserves a sanitized 409 revision conflict for the refetch UI', async () => {
     const backend = Object.assign(new Error('409: {"detail":{"code":"revision_conflict","message":"Task changed"}}'), {
       statusCode: 409

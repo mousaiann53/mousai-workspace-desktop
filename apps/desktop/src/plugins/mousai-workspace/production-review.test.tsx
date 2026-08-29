@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import type { Deliverable, ProductionGateState, ProductionReview, Project, Task } from './domain'
 import { ProductionReviewCard } from './production-review'
+import type { WorkspaceProductionActionTransport } from './service-production-actions'
 import { buildProductionReviewItems } from './service-production-review'
 
 const SHA = 'a'.repeat(64)
@@ -113,6 +114,10 @@ function review(overrides: Partial<ProductionReview> = {}): ProductionReview {
     bundleMeta: {
       missingInformation: [],
       decisionRequired: true,
+      inputSources: ['source-001'],
+      outputRequirements: { formats: ['pdf'] },
+      acceptanceCriteria: ['人工验收'],
+      deliverables: null,
       decisionNote: null,
       dueDate: '2026-09-01',
       revision: 2,
@@ -135,12 +140,26 @@ function review(overrides: Partial<ProductionReview> = {}): ProductionReview {
   }
 }
 
+const actionTransport = {
+  prepareProduction: vi.fn(),
+  approveProductionScope: vi.fn(),
+  startProduction: vi.fn(),
+  requestProductionRevision: vi.fn(),
+  acceptProduction: vi.fn()
+} satisfies WorkspaceProductionActionTransport
+
+function card(item: ReturnType<typeof buildProductionReviewItems>[number]) {
+  return <ProductionReviewCard item={item} onOpenLocal={vi.fn()} onRefresh={vi.fn()} transport={actionTransport} />
+}
+
 describe('Production Review presentation', () => {
   it('joins the canonical work-level model and renders authoritative production facts', () => {
     const [item] = buildProductionReviewItems(project, [task], [deliverable], [review()])
     const onOpenLocal = vi.fn()
 
-    render(<ProductionReviewCard item={item} onOpenLocal={onOpenLocal} />)
+    render(
+      <ProductionReviewCard item={item} onOpenLocal={onOpenLocal} onRefresh={vi.fn()} transport={actionTransport} />
+    )
 
     for (const label of [
       '所属项目',
@@ -175,7 +194,7 @@ describe('Production Review presentation', () => {
     expect(screen.getByText('已提交')).toBeTruthy()
     expect(screen.getByText('已交付')).toBeTruthy()
     expect(screen.getAllByText('待人工验收')).toHaveLength(2)
-    expect(screen.getByText(/Manifest：1024 bytes · .pdf · version manifest-v3/)).toBeTruthy()
+    expect(screen.getByText(/Manifest：final.pdf · 1024 bytes · .pdf · version manifest-v3/)).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: '打开本地产物' }))
     expect(onOpenLocal).toHaveBeenCalledWith(task.id)
@@ -184,11 +203,33 @@ describe('Production Review presentation', () => {
   it('keeps absent ProductionReadModel fields visibly unset and never invents a record', () => {
     const [item] = buildProductionReviewItems(project, [{ ...task, executor: null, deadline: null }], [deliverable], [])
 
-    render(<ProductionReviewCard item={item} onOpenLocal={vi.fn()} />)
+    render(card(item))
 
     expect(screen.getByText(/尚无 WorkBridge ProductionReadModel/)).toBeTruthy()
     expect(screen.getAllByText('未设置 / 等待输入').length).toBeGreaterThanOrEqual(10)
     expect(screen.queryByText(/READY_FOR_PRODUCTION/)).toBeNull()
+    expect((screen.getByRole('button', { name: '提交待人工审批' }) as HTMLButtonElement).disabled).toBe(false)
+    expect((screen.getByRole('button', { name: '批准范围' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('requires a separate human confirmation before approving scope and never auto-starts', () => {
+    const waiting = review({ gateState: 'WAITING_HUMAN_APPROVAL' })
+    const [item] = buildProductionReviewItems(project, [task], [], [waiting])
+
+    render(card(item))
+
+    expect((screen.getByRole('button', { name: '批准范围' }) as HTMLButtonElement).disabled).toBe(false)
+    expect((screen.getByRole('button', { name: '开始生产' }) as HTMLButtonElement).disabled).toBe(true)
+
+    fireEvent.click(screen.getByRole('button', { name: '批准范围' }))
+
+    expect(screen.getByRole('dialog')).toBeTruthy()
+    expect(screen.getAllByText(task.id).length).toBeGreaterThanOrEqual(2)
+    expect(screen.getByText('WAITING_HUMAN_APPROVAL')).toBeTruthy()
+    expect(screen.getAllByText('v3').length).toBeGreaterThanOrEqual(2)
+    expect(screen.getByRole('button', { name: '确认批准范围' })).toBeTruthy()
+    expect(actionTransport.approveProductionScope).not.toHaveBeenCalled()
+    expect(actionTransport.startProduction).not.toHaveBeenCalled()
   })
 
   it('shows final version only after canonical acceptance', () => {
@@ -199,7 +240,7 @@ describe('Production Review presentation', () => {
 
     const [item] = buildProductionReviewItems(project, [task], [deliverable], [accepted])
 
-    render(<ProductionReviewCard item={item} onOpenLocal={vi.fn()} />)
+    render(card(item))
 
     expect(screen.getByText('已验收（ACCEPTED）')).toBeTruthy()
     expect(screen.getByText('通过')).toBeTruthy()
@@ -220,7 +261,7 @@ describe('Production Review presentation', () => {
   ])('preserves the canonical %s gate label', (gateState, label) => {
     const [item] = buildProductionReviewItems(project, [task], [deliverable], [review({ gateState })])
 
-    render(<ProductionReviewCard item={item} onOpenLocal={vi.fn()} />)
+    render(card(item))
 
     expect(screen.getByText(label)).toBeTruthy()
   })

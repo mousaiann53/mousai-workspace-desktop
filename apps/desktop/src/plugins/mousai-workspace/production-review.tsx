@@ -1,6 +1,8 @@
 import { Button } from '@hermes/plugin-sdk'
 
 import type { ProductionGateState, ProductionReview, Task } from './domain'
+import { ProductionActionPanel } from './production-actions'
+import type { WorkspaceProductionActionTransport } from './service-production-actions'
 import type { ProductionReviewItem } from './service-production-review'
 
 const GATE_LABELS: Readonly<Record<ProductionGateState, string>> = {
@@ -118,12 +120,16 @@ function ReviewFact({ label, children }: { label: string; children: string }) {
 
 export function ProductionReviewCard({
   item,
-  onOpenLocal
+  onOpenLocal,
+  onRefresh,
+  transport
 }: {
   item: ProductionReviewItem
   onOpenLocal: (workId: string) => void
+  onRefresh: () => Promise<unknown>
+  transport: WorkspaceProductionActionTransport
 }) {
-  const { deliverable, project, review, task } = item
+  const { deliverables, project, review, task } = item
   const gate = review ? GATE_LABELS[review.gateState] : '未设置 / 等待输入'
   const scopeVersion = review?.approvedScope ? `v${review.approvedScope.version}` : '未设置 / 等待输入'
   const finalVersion = review?.gateState === 'ACCEPTED' ? review.manifestVersion : null
@@ -132,11 +138,13 @@ export function ProductionReviewCard({
     <article className="rounded-lg border border-(--ui-stroke-quaternary) p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="truncate text-sm font-medium">{deliverable.filename}</h3>
-          <p className="mt-1 text-[0.6875rem] text-(--ui-text-quaternary)">{deliverable.workId}</p>
+          <h3 className="truncate text-sm font-medium">{task.title}</h3>
+          <p className="mt-1 text-[0.6875rem] text-(--ui-text-quaternary)">{task.id}</p>
         </div>
         <div className="flex flex-wrap gap-1 text-[0.6875rem] text-(--ui-text-tertiary)">
-          <span className="rounded-full border border-(--ui-stroke-quaternary) px-2 py-1">已提交</span>
+          <span className="rounded-full border border-(--ui-stroke-quaternary) px-2 py-1">
+            {deliverables.length ? '已提交' : '未提交'}
+          </span>
           <span className="rounded-full border border-(--ui-stroke-quaternary) px-2 py-1">{deliveryBadge(review)}</span>
           <span className="rounded-full border border-(--ui-stroke-quaternary) px-2 py-1">
             {acceptanceBadge(review)}
@@ -157,14 +165,12 @@ export function ProductionReviewCard({
         <ReviewFact label="Production 状态">
           {review ? PRODUCTION_STATUS_LABELS[review.gateState] : '未设置 / 等待输入'}
         </ReviewFact>
-        <ReviewFact label="DDL">{dateValue(task?.deadline ?? null)}</ReviewFact>
-        <ReviewFact label="当前执行者">{value(task?.executor ?? null)}</ReviewFact>
-        <ReviewFact label="下一步">{value(task?.nextAction ?? null)}</ReviewFact>
+        <ReviewFact label="DDL">{dateValue(task.deadline)}</ReviewFact>
+        <ReviewFact label="当前执行者">{value(task.executor)}</ReviewFact>
+        <ReviewFact label="下一步">{value(task.nextAction)}</ReviewFact>
         <ReviewFact label="缺失资料">{listValue(review?.missingInformation ?? null)}</ReviewFact>
         <ReviewFact label="需要决策">{decisionValue(review)}</ReviewFact>
-        <ReviewFact label="WorkBridge 状态">
-          {task ? WORKBRIDGE_LABELS[task.workBridgeState] : '未设置 / 等待输入'}
-        </ReviewFact>
+        <ReviewFact label="WorkBridge 状态">{WORKBRIDGE_LABELS[task.workBridgeState]}</ReviewFact>
         <ReviewFact label="Approved Scope version">{scopeVersion}</ReviewFact>
         <ReviewFact label="Scope 历史">
           {review ? `${review.scopeHistory.length} 个版本` : '未设置 / 等待输入'}
@@ -179,18 +185,28 @@ export function ProductionReviewCard({
         <ReviewFact label="Gate 事件">{review ? `${review.events.length} 条` : '未设置 / 等待输入'}</ReviewFact>
       </dl>
 
-      <div className="mt-4 flex flex-wrap items-end justify-between gap-3 border-t border-(--ui-stroke-quaternary) pt-3">
-        <div className="min-w-0 text-[0.6875rem] text-(--ui-text-quaternary)">
-          <div>
-            Manifest：{deliverable.sizeBytes} bytes · {deliverable.extension} · version{' '}
-            {value(review?.manifestVersion ?? null)}
+      <div className="mt-4 border-t border-(--ui-stroke-quaternary) pt-3">
+        {deliverables.length ? (
+          <div className="space-y-2">
+            {deliverables.map(deliverable => (
+              <div className="text-[0.6875rem] text-(--ui-text-quaternary)" key={deliverable.id}>
+                <div>
+                  Manifest：{deliverable.filename} · {deliverable.sizeBytes} bytes · {deliverable.extension} · version{' '}
+                  {value(review?.manifestVersion ?? null)}
+                </div>
+                <div className="mt-1 break-all">SHA256：{deliverable.sha256}</div>
+              </div>
+            ))}
+            <Button onClick={() => onOpenLocal(task.id)} size="sm" type="button" variant="outline">
+              打开本地产物
+            </Button>
           </div>
-          <div className="mt-1 break-all">SHA256：{deliverable.sha256}</div>
-        </div>
-        <Button onClick={() => onOpenLocal(deliverable.workId)} size="sm" type="button" variant="outline">
-          打开本地产物
-        </Button>
+        ) : (
+          <p className="text-xs text-(--ui-text-tertiary)">Manifest 未设置 / 等待输入。</p>
+        )}
       </div>
+
+      <ProductionActionPanel item={item} onRefresh={onRefresh} transport={transport} />
     </article>
   )
 }

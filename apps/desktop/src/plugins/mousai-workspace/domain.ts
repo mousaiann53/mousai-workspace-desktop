@@ -150,12 +150,19 @@ export interface ProductionAcceptance {
   readonly reviewerComment: string | null
 }
 
+export type ProductionJsonValue =
+  boolean | null | number | string | readonly ProductionJsonValue[] | { readonly [key: string]: ProductionJsonValue }
+
 export interface ProductionBundleMeta {
-  readonly missingInformation: readonly string[] | null
-  readonly decisionRequired: boolean | null
+  readonly missingInformation: readonly string[]
+  readonly decisionRequired: boolean
+  readonly inputSources: readonly ProductionJsonValue[]
+  readonly outputRequirements: { readonly [key: string]: ProductionJsonValue }
+  readonly acceptanceCriteria: readonly ProductionJsonValue[]
+  readonly deliverables: { readonly [key: string]: ProductionJsonValue } | null
   readonly decisionNote: string | null
   readonly dueDate: string | null
-  readonly revision: number | null
+  readonly revision: number
   readonly revisionReason: string | null
 }
 

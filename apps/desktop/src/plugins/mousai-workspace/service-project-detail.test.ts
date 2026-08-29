@@ -100,7 +100,10 @@ describe('project detail presentation model', () => {
 
     expect(model?.tasks.map(item => item.id)).toEqual(['WORK-ID', 'WORK-NAME'])
     expect(model?.deliverables).toEqual([])
-    expect(model?.productionReviewItems).toEqual([])
+    expect(model?.productionReviewItems.map(item => [item.task.id, item.deliverables.length, item.review])).toEqual([
+      ['WORK-ID', 0, null],
+      ['WORK-NAME', 0, null]
+    ])
     expect(model?.activities).toEqual([])
   })
 

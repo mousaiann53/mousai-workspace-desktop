@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { ProjectDetail } from './project-detail'
+import type { WorkspaceProductionActionTransport } from './service-production-actions'
 import { WorkspaceTaskMutationError, type WorkspaceTaskMutationTransport } from './service-task-mutation'
 import type { RawWorkspaceReadSnapshot, WorkspaceReadTransport } from './service-workspace-read'
 
@@ -59,7 +60,9 @@ function transport(read = vi.fn(async () => snapshot())): WorkspaceReadTransport
   return { scope: 'project-detail-test', readSnapshot: read }
 }
 
-function mutationTransport(overrides: Partial<WorkspaceTaskMutationTransport> = {}): WorkspaceTaskMutationTransport {
+type ProjectMutationTransport = WorkspaceTaskMutationTransport & WorkspaceProductionActionTransport
+
+function mutationTransport(overrides: Partial<ProjectMutationTransport> = {}): ProjectMutationTransport {
   const result = (action: 'complete' | 'defer' | 'edit') => ({
     workId: 'WORK-001',
     action,
@@ -75,6 +78,11 @@ function mutationTransport(overrides: Partial<WorkspaceTaskMutationTransport> = 
     deferTask: vi.fn(async () => result('defer')),
     completeTask: vi.fn(async () => result('complete')),
     createTask: vi.fn(async () => ({ ...result('edit'), action: 'create' as const })),
+    prepareProduction: vi.fn<WorkspaceProductionActionTransport['prepareProduction']>(),
+    approveProductionScope: vi.fn<WorkspaceProductionActionTransport['approveProductionScope']>(),
+    startProduction: vi.fn<WorkspaceProductionActionTransport['startProduction']>(),
+    requestProductionRevision: vi.fn<WorkspaceProductionActionTransport['requestProductionRevision']>(),
+    acceptProduction: vi.fn<WorkspaceProductionActionTransport['acceptProduction']>(),
     ...overrides
   }
 }
@@ -107,7 +115,7 @@ describe('ProjectDetail', () => {
 
     expect(await screen.findByRole('heading', { name: '历史建筑活化利用' })).toBeTruthy()
     expect(screen.getAllByText('Phase 1C Base 闭环测试').length).toBeGreaterThanOrEqual(1)
-    expect(screen.getByText('整理第一次课资料')).toBeTruthy()
+    expect(screen.getAllByText('整理第一次课资料').length).toBeGreaterThanOrEqual(2)
     expect(screen.queryByText('不相关任务')).toBeNull()
     expect(screen.getAllByText('未设置').length).toBeGreaterThanOrEqual(6)
     expect(screen.getAllByText('暂无正式数据')).toHaveLength(4)

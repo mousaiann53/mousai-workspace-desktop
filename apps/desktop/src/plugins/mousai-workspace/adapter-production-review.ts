@@ -7,6 +7,7 @@ import type {
   ProductionBundleMeta,
   ProductionEvent,
   ProductionGateState,
+  ProductionJsonValue,
   ProductionReview
 } from './domain'
 
@@ -90,7 +91,63 @@ function acceptance(value: unknown): ProductionAcceptance | null {
 
   const verdict = asTrimmedText(value.verdict)
 
-  return verdict ? { verdict, reviewerComment: asTrimmedText(value.reviewer_comment) } : null
+  return verdict
+    ? { verdict, reviewerComment: asTrimmedText(value.reviewer_comment) ?? asTrimmedText(value.comment) }
+    : null
+}
+
+function jsonValue(value: unknown, depth = 0): ProductionJsonValue | undefined {
+  if (depth > 8) {
+    return undefined
+  }
+
+  if (value === null || typeof value === 'boolean' || typeof value === 'string') {
+    return value
+  }
+
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : undefined
+  }
+
+  if (Array.isArray(value)) {
+    const items = value.map(item => jsonValue(item, depth + 1))
+
+    return items.some(item => item === undefined) ? undefined : (items as readonly ProductionJsonValue[])
+  }
+
+  if (isRecord(value)) {
+    const result: Record<string, ProductionJsonValue> = {}
+
+    for (const [key, item] of Object.entries(value)) {
+      if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
+        return undefined
+      }
+
+      const parsed = jsonValue(item, depth + 1)
+
+      if (parsed === undefined) {
+        return undefined
+      }
+
+      result[key] = parsed
+    }
+
+    return result
+  }
+
+  return undefined
+}
+
+function jsonArray(value: unknown): readonly ProductionJsonValue[] | null {
+  const parsed = jsonValue(value)
+
+  return Array.isArray(parsed) ? parsed : null
+}
+
+function jsonObject(value: unknown): { readonly [key: string]: ProductionJsonValue } | null {
+  const parsed = jsonValue(value)
+
+  return isRecord(parsed) ? (parsed as { readonly [key: string]: ProductionJsonValue }) : null
 }
 
 function bundleMeta(value: unknown): ProductionBundleMeta | null {
@@ -98,12 +155,34 @@ function bundleMeta(value: unknown): ProductionBundleMeta | null {
     return null
   }
 
+  const missingInformation = textList(value.missing_information)
+  const inputSources = jsonArray(value.input_sources)
+  const outputRequirements = jsonObject(value.output_requirements)
+  const acceptanceCriteria = jsonArray(value.acceptance)
+
+  const deliverables =
+    value.deliverables === undefined || value.deliverables === null ? null : jsonObject(value.deliverables)
+
+  if (
+    missingInformation === null ||
+    inputSources === null ||
+    outputRequirements === null ||
+    acceptanceCriteria === null ||
+    (value.deliverables !== undefined && value.deliverables !== null && deliverables === null)
+  ) {
+    return null
+  }
+
   return {
-    missingInformation: textList(value.missing_information),
-    decisionRequired: typeof value.decision_required === 'boolean' ? value.decision_required : null,
+    missingInformation,
+    decisionRequired: typeof value.decision_required === 'boolean' ? value.decision_required : false,
+    inputSources,
+    outputRequirements,
+    acceptanceCriteria,
+    deliverables,
     decisionNote: asTrimmedText(value.decision_note),
     dueDate: asTrimmedText(value.due_date),
-    revision: integer(value.revision),
+    revision: integer(value.revision) ?? 1,
     revisionReason: asTrimmedText(value.revision_reason)
   }
 }

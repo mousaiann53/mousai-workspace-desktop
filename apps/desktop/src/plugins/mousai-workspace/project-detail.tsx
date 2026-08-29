@@ -21,6 +21,7 @@ import { type ReactNode, useEffect, useMemo, useState } from 'react'
 import type { Deliverable, Project, Task } from './domain'
 import { ProductionReviewCard } from './production-review'
 import type { LocalDeliverableAccess } from './service-local-deliverables'
+import type { WorkspaceProductionActionTransport } from './service-production-actions'
 import { projectDetailModel, type TimelineLayerModel } from './service-project-detail'
 import { taskActionCapability } from './service-task-actions'
 import { isRevisionConflict, type TaskEditChanges, type WorkspaceTaskMutationTransport } from './service-task-mutation'
@@ -605,7 +606,7 @@ export function ProjectDetail({
 }: {
   gatewayState: string
   localAccess: LocalDeliverableAccess
-  mutationTransport: WorkspaceTaskMutationTransport
+  mutationTransport: WorkspaceTaskMutationTransport & WorkspaceProductionActionTransport
   onBack: () => void
   projectId: string
   transport: WorkspaceReadTransport
@@ -742,13 +743,13 @@ export function ProjectDetail({
 
           <Section title="Production Review / 交付物">
             {model.productionReviewItems.length === 0 ? (
-              <EmptyReadState copy="当前项目没有可确认关联的 Manifest / Deliverable。" />
+              <EmptyReadState copy="当前项目没有可确认关联的正式任务。" />
             ) : (
               <div className="space-y-3">
                 {model.productionReviewItems.map(item => (
                   <ProductionReviewCard
                     item={item}
-                    key={item.deliverable.id}
+                    key={item.task.id}
                     onOpenLocal={workId => {
                       setLocalAccessMessage(null)
                       void localAccess.revealOutbox(workId).then(opened => {
@@ -757,6 +758,8 @@ export function ProjectDetail({
                         }
                       })
                     }}
+                    onRefresh={() => result.refetch()}
+                    transport={mutationTransport}
                   />
                 ))}
               </div>
