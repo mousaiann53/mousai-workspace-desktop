@@ -31,4 +31,4 @@ Canonical contract: WorkBridge OpenAPI 1.6 / `ProductionReadModel[]`
 
 This record accepts the Desktop product surfaces. It does not claim that M5–M10 course content, WorkBuddy production runs, or final artifacts have passed Mousai acceptance.
 
-Final full Workspace suite, Desktop build, and the one permitted Windows pack are recorded in the night-build checkpoint after they run.
+Final full Workspace suite, Desktop build, and the one permitted Windows pack passed and are recorded in [`V1-S1-DESKTOP-NIGHT-BUILD.md`](V1-S1-DESKTOP-NIGHT-BUILD.md).
