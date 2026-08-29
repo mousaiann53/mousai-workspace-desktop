@@ -66,6 +66,16 @@ export type TaskStatus =
   | 'unknown'
 
 export type TaskPriority = 'high' | 'low' | 'normal' | 'urgent' | 'unset'
+export type WorkBridgeState =
+  | 'archived'
+  | 'claimed'
+  | 'completed'
+  | 'failed'
+  | 'not_applicable'
+  | 'processing'
+  | 'review'
+  | 'unknown'
+  | 'waiting'
 
 export interface Task {
   readonly id: string
@@ -77,12 +87,15 @@ export interface Task {
   readonly priority: TaskPriority
   readonly priorityLabel: string | null
   readonly deadline: string | null
+  readonly estimate: string | null
+  readonly executor: string | null
   readonly nextAction: string | null
   readonly origin: string | null
   readonly artifactUrl: string | null
   readonly requiresHumanApproval: boolean | null
   readonly createdAt: string | null
   readonly updatedAt: string | null
+  readonly workBridgeState: WorkBridgeState
   readonly source: SourceReference
 }
 
@@ -98,12 +111,18 @@ export interface Event {
 export interface Deliverable {
   readonly id: string
   readonly workId: string
+  readonly taskId: string
+  readonly projectId: string | null
+  readonly name: string
   readonly filename: string
+  readonly format: string
   readonly relativePath: string
   readonly extension: string
   readonly sizeBytes: number
   readonly sha256: string
   readonly modifiedAt: string
+  readonly updatedAt: string
+  readonly reviewState: 'approved' | 'changes_requested' | 'pending' | 'rejected' | 'unknown'
   readonly localOutputRoot: string | null
   readonly source: SourceReference
 }

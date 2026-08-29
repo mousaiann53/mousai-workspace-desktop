@@ -58,7 +58,25 @@ describe('WorkData adapter', () => {
     expect(result.data.tasks[0]).toMatchObject({
       id: 'WORK-001',
       projectRef: '历史建筑活化利用',
-      status: 'inbox'
+      status: 'inbox',
+      workBridgeState: 'not_applicable',
+      estimate: null,
+      executor: null
+    })
+  })
+
+  it('keeps unknown enums and invalid dates safe', () => {
+    const result = adaptWorkDataSnapshot({
+      projectRecords: [projectRecord({ 类型: '自定义类型', 更新时间: 'not-a-date' })],
+      taskRecords: [taskRecord({ 状态: '未来状态', DDL: 'not-a-date' })]
+    })
+
+    expect(result.data.projects[0]).toMatchObject({ type: 'other', typeLabel: '自定义类型', updatedAt: null })
+    expect(result.data.tasks[0]).toMatchObject({
+      status: 'unknown',
+      statusLabel: '未来状态',
+      deadline: null,
+      workBridgeState: 'unknown'
     })
   })
 
@@ -145,6 +163,7 @@ describe('WorkBridge and Manifest adapters', () => {
     expect(result.data[0]).toMatchObject({
       id: 'WORK-20260827-004',
       status: 'review',
+      workBridgeState: 'review',
       priority: 'unset',
       deadline: null,
       projectRef: '历史建筑活化利用'
@@ -174,6 +193,11 @@ describe('WorkBridge and Manifest adapters', () => {
     expect(valid.data[0]).toMatchObject({
       workId: 'WORK-001',
       filename: 'test.pdf',
+      name: 'test.pdf',
+      format: '.pdf',
+      taskId: 'WORK-001',
+      projectId: null,
+      reviewState: 'unknown',
       sizeBytes: 12,
       sha256: SHA
     })

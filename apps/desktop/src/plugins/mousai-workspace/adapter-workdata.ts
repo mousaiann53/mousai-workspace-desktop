@@ -16,7 +16,8 @@ import type {
   ProjectType,
   Task,
   TaskPriority,
-  TaskStatus
+  TaskStatus,
+  WorkBridgeState
 } from './domain'
 
 export interface WorkDataSnapshot {
@@ -53,6 +54,22 @@ const TASK_PRIORITIES: Readonly<Record<string, TaskPriority>> = {
   正常: 'normal',
   高: 'high',
   紧急: 'urgent'
+}
+
+function workBridgeState(status: TaskStatus): WorkBridgeState {
+  const states: Partial<Record<TaskStatus, WorkBridgeState>> = {
+    waiting_local: 'waiting',
+    claimed: 'claimed',
+    local_processing: 'processing',
+    review: 'review',
+    model_failed: 'failed',
+    execution_failed: 'failed',
+    completed: 'completed',
+    archived: 'archived',
+    unknown: 'unknown'
+  }
+
+  return states[status] ?? 'not_applicable'
 }
 
 const EMPTY_COURSE_PROFILE: CourseProfile = {
@@ -203,23 +220,27 @@ function adaptTasks(payload: unknown, issues: AdapterIssue[]): Task[] {
     seen.add(id)
     const statusLabel = asTrimmedText(fields['状态'])
     const priorityLabel = asTrimmedText(fields['优先级'])
+    const status = statusLabel ? (TASK_STATUSES[statusLabel] ?? 'unknown') : 'unknown'
 
     tasks.push({
       id,
       title,
       typeLabel: asTrimmedText(fields['类型']),
       projectRef: asTrimmedText(fields['所属项目']),
-      status: statusLabel ? (TASK_STATUSES[statusLabel] ?? 'unknown') : 'unknown',
+      status,
       statusLabel,
       priority: priorityLabel ? (TASK_PRIORITIES[priorityLabel] ?? 'unset') : 'unset',
       priorityLabel,
       deadline: asIsoDateTime(fields.DDL),
+      estimate: null,
+      executor: null,
       nextAction: asTrimmedText(fields['下一步']),
       origin: asTrimmedText(fields['来源']),
       artifactUrl: asTrimmedText(fields['产物链接']),
       requiresHumanApproval: asNullableBoolean(fields['需要人工验收']),
       createdAt: asIsoDateTime(fields['创建时间']),
       updatedAt: asIsoDateTime(fields['最后更新时间']),
+      workBridgeState: workBridgeState(status),
       source: { system: 'workdata', recordId: sourceId }
     })
   }

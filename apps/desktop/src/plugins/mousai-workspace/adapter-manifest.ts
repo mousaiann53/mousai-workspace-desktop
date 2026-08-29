@@ -99,12 +99,18 @@ export function adaptManifest(payload: unknown): AdapterResult<readonly Delivera
     deliverables.push({
       id: `${workId}:${sha256}:${relativePath}`,
       workId,
+      taskId: workId,
+      projectId: null,
+      name: filename,
       filename,
+      format: extension,
       relativePath,
       extension,
       sizeBytes,
       sha256,
       modifiedAt,
+      updatedAt: modifiedAt,
+      reviewState: 'unknown',
       localOutputRoot,
       source: { system: 'manifest', recordId: relativePath }
     })

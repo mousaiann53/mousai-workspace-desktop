@@ -143,6 +143,29 @@ describe('ProjectGallery', () => {
     expect(read).toHaveBeenCalledTimes(1)
   })
 
+  it('refetches after an established Remote Gateway reconnects', async () => {
+    const read = vi.fn(async () => snapshot([projectRecord('PROJECT-001', '历史建筑活化利用', '教学')]))
+    const source = transport(read)
+    const { rerender, client } = renderGallery(<ProjectGallery gatewayState="open" transport={source} />)
+
+    await screen.findByText('历史建筑活化利用')
+    expect(read).toHaveBeenCalledTimes(1)
+
+    rerender(
+      <QueryClientProvider client={client}>
+        <ProjectGallery gatewayState="connecting" transport={source} />
+      </QueryClientProvider>
+    )
+    expect(screen.getByText('等待 Gateway 连接')).toBeTruthy()
+
+    rerender(
+      <QueryClientProvider client={client}>
+        <ProjectGallery gatewayState="open" transport={source} />
+      </QueryClientProvider>
+    )
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(2))
+  })
+
   it('refetches on Gallery reopen so navigation cannot silently freeze stale data', async () => {
     const read = vi.fn(async () => snapshot([projectRecord('PROJECT-001', '历史建筑活化利用', '教学')]))
     const source = transport(read)
@@ -169,5 +192,17 @@ describe('ProjectGallery', () => {
     fireEvent.click(screen.getByRole('button', { name: '重试' }))
     expect(await screen.findByText('历史建筑活化利用')).toBeTruthy()
     expect(read).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps the Gallery surface read-only', async () => {
+    renderGallery(
+      <ProjectGallery
+        gatewayState="open"
+        transport={transport(async () => snapshot([projectRecord('PROJECT-001', '历史建筑活化利用', '教学')]))}
+      />
+    )
+
+    await screen.findByText('历史建筑活化利用')
+    expect(screen.queryByRole('button', { name: /新建|创建|编辑|删除|保存/ })).toBeNull()
   })
 })

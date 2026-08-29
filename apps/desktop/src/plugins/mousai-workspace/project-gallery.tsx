@@ -73,6 +73,7 @@ function ProjectCard({ project, openTaskCount }: { project: Project; openTaskCou
         <ProjectFact label="下一 DDL" value={project.nextDeadline} />
         <ProjectFact label="风险" value={project.risk} />
         <ProjectFact label="未闭环任务" value={openTaskCount} />
+        <ProjectFact label="标签" value={project.tags.length ? project.tags.join('、') : null} />
       </dl>
 
       <div className="mt-4 border-t border-(--ui-stroke-quaternary) pt-3">
@@ -141,7 +142,7 @@ export function ProjectGallery({
     enabled: gatewayState === 'open',
     refetchOnMount: 'always',
     retry: false,
-    staleTime: 30_000
+    staleTime: 0
   })
 
   const cards = useMemo(() => (result.data ? projectCardModels(result.data.snapshot) : []), [result.data])

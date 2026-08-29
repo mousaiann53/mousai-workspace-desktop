@@ -1,5 +1,5 @@
 import { asNullableBoolean, asTrimmedText, isRecord, issue, recordsFromPayload } from './adapter-shared'
-import type { AdapterIssue, AdapterResult, Task, TaskPriority, TaskStatus } from './domain'
+import type { AdapterIssue, AdapterResult, Task, TaskPriority, TaskStatus, WorkBridgeState } from './domain'
 
 const TASK_STATUSES: Readonly<Record<string, TaskStatus>> = {
   收件箱: 'inbox',
@@ -15,6 +15,22 @@ const TASK_STATUSES: Readonly<Record<string, TaskStatus>> = {
   执行失败: 'execution_failed',
   资料缺失: 'material_missing',
   需要决策: 'decision_required'
+}
+
+function workBridgeState(status: TaskStatus): WorkBridgeState {
+  const states: Partial<Record<TaskStatus, WorkBridgeState>> = {
+    waiting_local: 'waiting',
+    claimed: 'claimed',
+    local_processing: 'processing',
+    review: 'review',
+    model_failed: 'failed',
+    execution_failed: 'failed',
+    completed: 'completed',
+    archived: 'archived',
+    unknown: 'unknown'
+  }
+
+  return states[status] ?? 'not_applicable'
 }
 
 function adaptJob(candidate: unknown, issues: AdapterIssue[], seen: Set<string>): Task | null {
@@ -47,23 +63,27 @@ function adaptJob(candidate: unknown, issues: AdapterIssue[], seen: Set<string>)
 
   seen.add(id)
   const statusLabel = asTrimmedText(candidate.status)
+  const status = statusLabel ? (TASK_STATUSES[statusLabel] ?? 'unknown') : 'unknown'
 
   return {
     id,
     title,
     typeLabel: asTrimmedText(candidate.task_type),
     projectRef: asTrimmedText(candidate.project),
-    status: statusLabel ? (TASK_STATUSES[statusLabel] ?? 'unknown') : 'unknown',
+    status,
     statusLabel,
     priority: 'unset' satisfies TaskPriority,
     priorityLabel: null,
     deadline: null,
+    estimate: null,
+    executor: null,
     nextAction: asTrimmedText(candidate.next_step),
     origin: null,
     artifactUrl: null,
     requiresHumanApproval: asNullableBoolean(candidate.requires_human_approval),
     createdAt: null,
     updatedAt: null,
+    workBridgeState: workBridgeState(status),
     source: { system: 'workbridge', recordId: id }
   }
 }

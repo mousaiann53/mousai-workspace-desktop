@@ -1,4 +1,4 @@
-import type { Project, ProjectType, Task, WorkspaceSnapshot } from './domain'
+import type { Project, ProjectType, Task, WorkHorizon, WorkspaceSnapshot } from './domain'
 
 export type ProjectTypeFilter = 'all' | ProjectType
 
@@ -14,7 +14,7 @@ export interface ProjectCardModel {
 }
 
 export interface ProjectGroup {
-  readonly key: ProjectType
+  readonly key: WorkHorizon
   readonly label: string
   readonly projects: readonly ProjectCardModel[]
 }
@@ -25,6 +25,13 @@ export const PROJECT_TYPE_LABELS: Readonly<Record<ProjectType, string>> = {
   administrative: '行政',
   creative: '创意制作',
   other: '其他'
+}
+
+export const PROJECT_HORIZON_LABELS: Readonly<Record<WorkHorizon, string>> = {
+  long: '长期',
+  medium: '中期',
+  short: '短期',
+  unset: '未设置时间范围'
 }
 
 const CLOSED_TASKS = new Set(['archived', 'completed'])
@@ -73,13 +80,13 @@ export function filterProjectCards(
 }
 
 export function groupProjectCards(cards: readonly ProjectCardModel[]): readonly ProjectGroup[] {
-  const order: readonly ProjectType[] = ['teaching', 'research', 'administrative', 'creative', 'other']
+  const order: readonly WorkHorizon[] = ['long', 'medium', 'short', 'unset']
 
   return order
     .map(key => ({
       key,
-      label: PROJECT_TYPE_LABELS[key],
-      projects: cards.filter(card => card.project.type === key)
+      label: PROJECT_HORIZON_LABELS[key],
+      projects: cards.filter(card => card.project.horizon === key)
     }))
     .filter(group => group.projects.length > 0)
 }
