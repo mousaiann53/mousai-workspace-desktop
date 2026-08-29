@@ -3,9 +3,13 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { ProjectDetail } from './project-detail'
+import {
+  WorkspaceTaskMutationError,
+  type WorkspaceTaskMutationTransport
+} from './service-task-mutation'
 import type { RawWorkspaceReadSnapshot, WorkspaceReadTransport } from './service-workspace-read'
 
-function snapshot(): RawWorkspaceReadSnapshot {
+function snapshot(taskOverrides: Record<string, unknown> = {}): RawWorkspaceReadSnapshot {
   return {
     workdata: {
       projectRecords: [
@@ -17,17 +21,20 @@ function snapshot(): RawWorkspaceReadSnapshot {
       taskRecords: [
         {
           record_id: 'rec-task-1',
+          revision: 'a'.repeat(64),
           fields: {
             'WORK-ID': 'WORK-001',
             任务名称: 'Phase 1C Base 闭环测试',
             所属项目: '历史建筑活化利用',
             状态: '待验收',
             优先级: '普通',
-            需要人工验收: true
+            需要人工验收: true,
+            ...taskOverrides
           }
         },
         {
           record_id: 'rec-task-2',
+          revision: 'b'.repeat(64),
           fields: {
             'WORK-ID': 'WORK-002',
             任务名称: '整理第一次课资料',
@@ -37,6 +44,7 @@ function snapshot(): RawWorkspaceReadSnapshot {
         },
         {
           record_id: 'rec-task-other',
+          revision: 'c'.repeat(64),
           fields: {
             'WORK-ID': 'WORK-OTHER',
             任务名称: '不相关任务',
@@ -54,17 +62,48 @@ function transport(read = vi.fn(async () => snapshot())): WorkspaceReadTransport
   return { scope: 'project-detail-test', readSnapshot: read }
 }
 
-function renderDetail(source = transport(), gatewayState = 'open') {
+function mutationTransport(
+  overrides: Partial<WorkspaceTaskMutationTransport> = {}
+): WorkspaceTaskMutationTransport {
+  const result = (action: 'complete' | 'defer' | 'edit') => ({
+    workId: 'WORK-001',
+    action,
+    success: true as const,
+    idempotent: false,
+    newRevision: 'd'.repeat(64),
+    changed: {}
+  })
+
+  return {
+    scope: 'mutation-test',
+    editTask: vi.fn(async () => result('edit')),
+    deferTask: vi.fn(async () => result('defer')),
+    completeTask: vi.fn(async () => result('complete')),
+    ...overrides
+  }
+}
+
+function renderDetail(
+  source = transport(),
+  gatewayState = 'open',
+  mutations = mutationTransport()
+) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const onBack = vi.fn()
 
   const rendered = render(
     <QueryClientProvider client={client}>
-      <ProjectDetail gatewayState={gatewayState} onBack={onBack} projectId="PROJECT-001" transport={source} />
+      <ProjectDetail
+        gatewayState={gatewayState}
+        mutationTransport={mutations}
+        onBack={onBack}
+        projectId="PROJECT-001"
+        transport={source}
+      />
     </QueryClientProvider>
   )
 
-  return { ...rendered, client, onBack }
+  return { ...rendered, client, mutations, onBack }
 }
 
 describe('ProjectDetail', () => {
@@ -74,7 +113,7 @@ describe('ProjectDetail', () => {
     renderDetail()
 
     expect(await screen.findByRole('heading', { name: '历史建筑活化利用' })).toBeTruthy()
-    expect(screen.getByText('Phase 1C Base 闭环测试')).toBeTruthy()
+    expect(screen.getAllByText('Phase 1C Base 闭环测试').length).toBeGreaterThanOrEqual(1)
     expect(screen.getByText('整理第一次课资料')).toBeTruthy()
     expect(screen.queryByText('不相关任务')).toBeNull()
     expect(screen.getAllByText('未设置').length).toBeGreaterThanOrEqual(6)
@@ -82,26 +121,35 @@ describe('ProjectDetail', () => {
     expect(screen.queryByText(/32|48|40%|60%|泰特现代|首钢园|陶溪川/)).toBeNull()
   })
 
-  it('opens, switches and closes the read-only task inspector while preserving the project', async () => {
+  it('opens, switches and closes the controlled task inspector while preserving the project', async () => {
     renderDetail()
     await screen.findByRole('heading', { name: '历史建筑活化利用' })
 
     fireEvent.click(screen.getByRole('button', { name: /Phase 1C Base 闭环测试/ }))
-    expect(await screen.findByText('WORK-001 · 只读详情')).toBeTruthy()
+    expect(await screen.findByText('WORK-001 · 受控任务事实')).toBeTruthy()
     expect(screen.getByText('是')).toBeTruthy()
-    expect(screen.queryByRole('button', { name: /编辑|保存|完成|延期|搁置/ })).toBeNull()
+    expect(screen.getByRole('button', { name: '编辑' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '延期' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '完成' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /新建|搁置|删除|归档|重新执行/ })).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: '编辑' }))
+    fireEvent.change(screen.getByLabelText('任务名称'), { target: { value: '未保存草稿' } })
+    fireEvent.click(screen.getByRole('button', { name: '取消' }))
+    expect(screen.queryByLabelText('任务名称')).toBeNull()
+    expect(screen.getByText('Phase 1C Base 闭环测试')).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: 'WORK-002' }))
-    expect(await screen.findByText('WORK-002 · 只读详情')).toBeTruthy()
+    expect(await screen.findByText('WORK-002 · 受控任务事实')).toBeTruthy()
 
     fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
-    await waitFor(() => expect(screen.queryByText('WORK-002 · 只读详情')).toBeNull())
+    await waitFor(() => expect(screen.queryByText('WORK-002 · 受控任务事实')).toBeNull())
     expect(screen.getByRole('heading', { name: '历史建筑活化利用' })).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: /整理第一次课资料/ }))
-    expect(await screen.findByText('WORK-002 · 只读详情')).toBeTruthy()
+    expect(await screen.findByText('WORK-002 · 受控任务事实')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: /关闭|Close/ }))
-    await waitFor(() => expect(screen.queryByText('WORK-002 · 只读详情')).toBeNull())
+    await waitFor(() => expect(screen.queryByText('WORK-002 · 受控任务事实')).toBeNull())
   })
 
   it('waits on disconnect and refetches after reconnect', async () => {
@@ -114,7 +162,13 @@ describe('ProjectDetail', () => {
 
     rerender(
       <QueryClientProvider client={client}>
-        <ProjectDetail gatewayState="open" onBack={onBack} projectId="PROJECT-001" transport={source} />
+        <ProjectDetail
+          gatewayState="open"
+          mutationTransport={mutationTransport()}
+          onBack={onBack}
+          projectId="PROJECT-001"
+          transport={source}
+        />
       </QueryClientProvider>
     )
     expect(await screen.findByRole('heading', { name: '历史建筑活化利用' })).toBeTruthy()
@@ -131,5 +185,142 @@ describe('ProjectDetail', () => {
     expect(await screen.findByText('项目详情读取失败')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: '重试' }))
     expect(await screen.findByRole('heading', { name: '历史建筑活化利用' })).toBeTruthy()
+  })
+
+  it('submits an edit without optimistic facts and refetches the authoritative snapshot', async () => {
+    let resolveEdit!: (value: Awaited<ReturnType<WorkspaceTaskMutationTransport['editTask']>>) => void
+
+    const editTask = vi.fn(
+      () => new Promise<Awaited<ReturnType<WorkspaceTaskMutationTransport['editTask']>>>(resolve => (resolveEdit = resolve))
+    )
+
+    const read = vi
+      .fn<() => Promise<RawWorkspaceReadSnapshot>>()
+      .mockResolvedValueOnce(snapshot())
+      .mockResolvedValue(snapshot({ 下一步: '核对正式来源' }))
+
+    renderDetail(transport(read), 'open', mutationTransport({ editTask }))
+    await screen.findByRole('heading', { name: '历史建筑活化利用' })
+    fireEvent.click(screen.getByRole('button', { name: /Phase 1C Base 闭环测试/ }))
+    fireEvent.click(await screen.findByRole('button', { name: '编辑' }))
+    fireEvent.change(screen.getByLabelText('下一步行动'), { target: { value: '核对正式来源' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+
+    expect(screen.getByText('提交中')).toBeTruthy()
+    expect(screen.getAllByText('核对正式来源')).toHaveLength(1)
+    resolveEdit({
+      workId: 'WORK-001',
+      action: 'edit',
+      success: true,
+      idempotent: false,
+      newRevision: 'd'.repeat(64),
+      changed: { nextAction: '核对正式来源' }
+    })
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(screen.getAllByText('核对正式来源').length).toBeGreaterThanOrEqual(1))
+    expect(editTask).toHaveBeenCalledWith(
+      'WORK-001',
+      expect.objectContaining({
+        expectedRevision: 'a'.repeat(64),
+        changes: { nextAction: '核对正式来源' }
+      })
+    )
+  })
+
+  it('keeps the inspector form open on 409, reports conflict and refetches', async () => {
+    const read = vi.fn(async () => snapshot())
+
+    const editTask = vi.fn(async () => {
+      throw new WorkspaceTaskMutationError('409 conflict', 409, 'revision_conflict')
+    })
+
+    renderDetail(transport(read), 'open', mutationTransport({ editTask }))
+    await screen.findByRole('heading', { name: '历史建筑活化利用' })
+    fireEvent.click(screen.getByRole('button', { name: /Phase 1C Base 闭环测试/ }))
+    fireEvent.click(await screen.findByRole('button', { name: '编辑' }))
+    fireEvent.change(screen.getByLabelText('下一步行动'), { target: { value: '冲突后的输入仍保留' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+
+    expect((await screen.findByRole('alert')).textContent).toContain('任务数据已变化')
+    expect((screen.getByLabelText('下一步行动') as HTMLTextAreaElement).value).toBe('冲突后的输入仍保留')
+    expect(read).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps the authoritative snapshot and draft after a non-conflict mutation error', async () => {
+    const read = vi.fn(async () => snapshot())
+
+    const editTask = vi.fn(async () => {
+      throw new WorkspaceTaskMutationError('sanitized failure', 502, 'mutation_failed')
+    })
+
+    renderDetail(transport(read), 'open', mutationTransport({ editTask }))
+    await screen.findByRole('heading', { name: '历史建筑活化利用' })
+    fireEvent.click(screen.getByRole('button', { name: /Phase 1C Base 闭环测试/ }))
+    fireEvent.click(await screen.findByRole('button', { name: '编辑' }))
+    fireEvent.change(screen.getByLabelText('下一步行动'), { target: { value: '失败后保留的草稿' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+
+    expect((await screen.findByRole('alert')).textContent).toContain('任务更新失败')
+    expect((screen.getByLabelText('下一步行动') as HTMLTextAreaElement).value).toBe('失败后保留的草稿')
+    expect(read).toHaveBeenCalledTimes(1)
+  })
+
+  it('requires an explicit defer date and refetches after success', async () => {
+    const deferTask = vi.fn(async () => ({
+      workId: 'WORK-001',
+      action: 'defer' as const,
+      success: true as const,
+      idempotent: false,
+      newRevision: 'd'.repeat(64),
+      changed: { deadline: '2026-09-10' }
+    }))
+
+    const read = vi.fn(async () => snapshot())
+    renderDetail(transport(read), 'open', mutationTransport({ deferTask }))
+    await screen.findByRole('heading', { name: '历史建筑活化利用' })
+    fireEvent.click(screen.getByRole('button', { name: /Phase 1C Base 闭环测试/ }))
+    fireEvent.click(await screen.findByRole('button', { name: '延期' }))
+    expect((screen.getByRole('button', { name: '确认延期' }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.change(screen.getByLabelText('明确的新 DDL'), { target: { value: '2026-09-10' } })
+    fireEvent.click(screen.getByRole('button', { name: '确认延期' }))
+    await waitFor(() => expect(deferTask).toHaveBeenCalledTimes(1))
+    expect(deferTask).toHaveBeenCalledWith(
+      'WORK-001',
+      expect.objectContaining({ deadline: '2026-09-10', expectedRevision: 'a'.repeat(64) })
+    )
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(2))
+  })
+
+  it('confirms human final completion through the Workspace mutation door', async () => {
+    const completeTask = vi.fn(async () => ({
+      workId: 'WORK-001',
+      action: 'complete' as const,
+      success: true as const,
+      idempotent: false,
+      newRevision: 'd'.repeat(64),
+      changed: { status: '已完成' }
+    }))
+
+    renderDetail(transport(), 'open', mutationTransport({ completeTask }))
+    await screen.findByRole('heading', { name: '历史建筑活化利用' })
+    fireEvent.click(screen.getByRole('button', { name: /Phase 1C Base 闭环测试/ }))
+    fireEvent.click(await screen.findByRole('button', { name: '完成' }))
+    expect(screen.getByText(/不会调用 WorkBridge worker-complete/)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '确认完成' }))
+    await waitFor(() => expect(completeTask).toHaveBeenCalledTimes(1))
+    expect(completeTask).toHaveBeenCalledWith(
+      'WORK-001',
+      expect.objectContaining({ expectedRevision: 'a'.repeat(64) })
+    )
+  })
+
+  it('disables all mutation actions for WorkBridge-active tasks', async () => {
+    renderDetail(transport(vi.fn(async () => snapshot({ 状态: '已领取' }))))
+    await screen.findByRole('heading', { name: '历史建筑活化利用' })
+    fireEvent.click(screen.getByRole('button', { name: /Phase 1C Base 闭环测试/ }))
+    expect(await screen.findByText(/WorkBridge 执行/)).toBeTruthy()
+    expect((screen.getByRole('button', { name: '编辑' }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: '延期' }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: '完成' }) as HTMLButtonElement).disabled).toBe(true)
   })
 })

@@ -47,6 +47,7 @@ function project(overrides: Partial<Project> = {}): Project {
 function task(id: string, projectRef: string | null, deadline: string | null = null): Task {
   return {
     id,
+    revision: 'a'.repeat(64),
     title: `任务 ${id}`,
     typeLabel: null,
     projectRef,
