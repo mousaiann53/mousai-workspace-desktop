@@ -41,7 +41,7 @@ describe('Mousai Workspace plugin shell', () => {
 
   it('registers one left pane and one route for each section', () => {
     const registerMany = vi.fn()
-    plugin.register({ registerMany, onDispose: vi.fn() } as never)
+    plugin.register({ registerMany, onDispose: vi.fn(), rest: vi.fn() } as never)
 
     const contributions = registerMany.mock.calls[0]?.[0] ?? []
     expect(contributions.filter((item: { area: string }) => item.area === 'panes')).toHaveLength(1)
