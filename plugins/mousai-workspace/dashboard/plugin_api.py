@@ -10,6 +10,7 @@ token and never returns raw Feishu records.
 from __future__ import annotations
 
 import importlib.util
+import json
 import logging
 import os
 import stat
@@ -28,9 +29,11 @@ log = logging.getLogger(__name__)
 
 SCHEMA_VERSION = "mousai.workspace.snapshot.v1"
 PROJECT_TABLE_NAME = "项目与课程"
+TASK_TABLE_NAME = "工作任务"
 WORKBRIDGE_MODULE = Path("/opt/workagent/workbridge-api/workbridge_api.py")
 WORKDATA_ENV_FILE = Path("/var/lib/workagent/workbridge/workbridge.env")
 MAX_PROJECT_RECORDS = 5_000
+MAX_TASK_RECORDS = 10_000
 MAX_COLLECTION_ITEMS = 64
 MAX_TEXT_LENGTH = 8_192
 
@@ -62,6 +65,28 @@ PROJECT_FIELD_ALLOWLIST = frozenset(
         "PPT模板链接",
         "课程资料根链接",
     }
+)
+
+TASK_FIELD_ALLOWLIST = frozenset(
+    {
+        "WORK-ID",
+        "任务名称",
+        "类型",
+        "所属项目",
+        "状态",
+        "优先级",
+        "DDL",
+        "下一步",
+        "来源",
+        "产物链接",
+        "需要人工验收",
+        "创建时间",
+        "最后更新时间",
+    }
+)
+MANIFEST_SOURCE_FIELD = "产物清单"
+MANIFEST_FILE_ALLOWLIST = frozenset(
+    {"filename", "relative_path", "extension", "size_bytes", "sha256", "modified_at"}
 )
 
 _NESTED_VALUE_KEYS = frozenset({"link", "name", "text", "type", "value"})
@@ -192,6 +217,80 @@ def _sanitize_project(record: Any) -> dict[str, Any] | None:
     }
 
 
+def _sanitize_task(record: Any) -> dict[str, Any] | None:
+    if not isinstance(record, dict):
+        return None
+    fields = record.get("fields")
+    if not isinstance(fields, dict):
+        fields = {}
+    clean_fields = {
+        key: clean
+        for key, value in fields.items()
+        if key in TASK_FIELD_ALLOWLIST
+        if (clean := _sanitize_value(value)) is not None
+    }
+    record_id = record.get("record_id")
+    return {
+        "record_id": record_id[:256] if isinstance(record_id, str) else None,
+        "fields": clean_fields,
+    }
+
+
+def _text_value(value: Any) -> str | None:
+    if isinstance(value, str):
+        return value.strip() or None
+    if isinstance(value, list):
+        parts = [part for item in value if (part := _text_value(item))]
+        return "".join(parts) or None
+    if isinstance(value, dict):
+        for key in ("text", "value"):
+            if key in value and (text := _text_value(value[key])):
+                return text
+    return None
+
+
+def _sanitize_manifest(record: Any) -> dict[str, Any] | None:
+    if not isinstance(record, dict) or not isinstance(record.get("fields"), dict):
+        return None
+    raw = _text_value(record["fields"].get(MANIFEST_SOURCE_FIELD))
+    if not raw or len(raw) > MAX_TEXT_LENGTH * 8:
+        return None
+    try:
+        manifest = json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(manifest, dict):
+        return None
+    work_id = _text_value(manifest.get("work_id"))
+    record_work_id = _text_value(record["fields"].get("WORK-ID"))
+    files = manifest.get("files")
+    if not work_id or work_id != record_work_id or not isinstance(files, list) or len(files) > MAX_COLLECTION_ITEMS:
+        return None
+    clean_files: list[dict[str, Any]] = []
+    for candidate in files:
+        if not isinstance(candidate, dict):
+            continue
+        clean = {
+            key: value
+            for key, value in candidate.items()
+            if key in MANIFEST_FILE_ALLOWLIST
+            if isinstance(value, (int, str)) and not isinstance(value, bool)
+        }
+        clean_files.append(clean)
+    return {
+        "work_id": work_id[:256],
+        "generated_at": _text_value(manifest.get("generated_at")),
+        "file_count": manifest.get("file_count"),
+        "total_size_bytes": manifest.get("total_size_bytes"),
+        "files": clean_files,
+    }
+    record_id = record.get("record_id")
+    return {
+        "record_id": record_id[:256] if isinstance(record_id, str) else None,
+        "fields": clean_fields,
+    }
+
+
 def _list_tables(store: Any) -> list[dict[str, Any]]:
     app = urllib.parse.quote(store.config.base_app_token, safe="")
     page_token = ""
@@ -210,14 +309,14 @@ def _list_tables(store: Any) -> list[dict[str, Any]]:
             return tables
 
 
-def _project_table_id(store: Any) -> str:
-    matches = [item for item in _list_tables(store) if item.get("name") == PROJECT_TABLE_NAME]
+def _table_id(tables: list[dict[str, Any]], name: str) -> str:
+    matches = [item for item in tables if item.get("name") == name]
     if len(matches) != 1 or not isinstance(matches[0].get("table_id"), str):
-        raise WorkspaceAuthorityUnavailable("Project table is missing or ambiguous")
+        raise WorkspaceAuthorityUnavailable(f"Required table is missing or ambiguous: {name}")
     return matches[0]["table_id"]
 
 
-def _read_project_records(store: Any, table_id: str) -> list[dict[str, Any]]:
+def _read_records(store: Any, table_id: str, *, limit: int) -> list[dict[str, Any]]:
     app = urllib.parse.quote(store.config.base_app_token, safe="")
     table = urllib.parse.quote(table_id, safe="")
     page_token = ""
@@ -232,8 +331,8 @@ def _read_project_records(store: Any, table_id: str) -> list[dict[str, Any]]:
         )
         data = response.get("data") or {}
         records.extend(item for item in data.get("items") or [] if isinstance(item, dict))
-        if len(records) > MAX_PROJECT_RECORDS:
-            raise WorkspaceAuthorityUnavailable("Project record limit exceeded")
+        if len(records) > limit:
+            raise WorkspaceAuthorityUnavailable("Workspace record limit exceeded")
         if not data.get("has_more"):
             return records
         page_token = str(data.get("page_token") or "")
@@ -243,19 +342,25 @@ def _read_project_records(store: Any, table_id: str) -> list[dict[str, Any]]:
 
 def build_workspace_snapshot() -> dict[str, Any]:
     store = _authority_store()
-    table_id = _project_table_id(store)
+    tables = _list_tables(store)
+    project_table_id = _table_id(tables, PROJECT_TABLE_NAME)
+    task_table_id = _table_id(tables, TASK_TABLE_NAME)
+    project_records = _read_records(store, project_table_id, limit=MAX_PROJECT_RECORDS)
+    task_records = _read_records(store, task_table_id, limit=MAX_TASK_RECORDS)
     projects = [
         sanitized
-        for record in _read_project_records(store, table_id)
+        for record in project_records
         if (sanitized := _sanitize_project(record)) is not None
     ]
+    tasks = [sanitized for record in task_records if (sanitized := _sanitize_task(record)) is not None]
+    manifests = [sanitized for record in task_records if (sanitized := _sanitize_manifest(record)) is not None]
     return {
         "schemaVersion": SCHEMA_VERSION,
         "generatedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "projects": projects,
-        "tasks": [],
+        "tasks": tasks,
         "events": [],
-        "deliverables": [],
+        "deliverables": manifests,
     }
 
 

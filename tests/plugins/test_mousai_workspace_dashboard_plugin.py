@@ -51,7 +51,7 @@ class FakeStore:
                     "has_more": False,
                 }
             }
-        if "/records?" in path:
+        if "/project-table/records?" in path:
             return {
                 "data": {
                     "items": [
@@ -65,6 +65,36 @@ class FakeStore:
                                 "正式资料链接": {"text": "课程资料", "link": "https://example.invalid/course"},
                                 "学生姓名": "must-not-leave-server",
                                 "credential": "must-not-leave-server",
+                            },
+                            "created_by": {"name": "must-not-leave-server"},
+                        }
+                    ],
+                    "has_more": False,
+                }
+            }
+        if "/task-table/records?" in path:
+            return {
+                "data": {
+                    "items": [
+                        {
+                            "record_id": "rec-task",
+                            "fields": {
+                                "WORK-ID": "WORK-001",
+                                "任务名称": "整理第一次课资料",
+                                "类型": "行政",
+                                "所属项目": "历史建筑活化利用",
+                                "状态": "收件箱",
+                                "优先级": "普通",
+                                "DDL": None,
+                                "下一步": "核对正式资料",
+                                "来源": "工作系统",
+                                "产物链接": None,
+                                "需要人工验收": True,
+                                "创建时间": 1787965200000,
+                                "最后更新时间": 1787968800000,
+                                "产物清单": '{"work_id":"WORK-001","generated_at":"2026-08-29T01:00:00Z","file_count":1,"total_size_bytes":12,"local_output_root":"H:\\\\private","files":[{"filename":"test.pdf","relative_path":"deliverables/test.pdf","extension":".pdf","size_bytes":12,"sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","modified_at":"2026-08-29T01:00:00Z","secret":"strip-me"}]}',
+                                "交付记录": "must-not-leave-server",
+                                "unknown": "must-not-leave-server",
                             },
                             "created_by": {"name": "must-not-leave-server"},
                         }
@@ -89,9 +119,49 @@ class MousaiWorkspaceDashboardPluginTests(unittest.TestCase):
 
         self.assertEqual(snapshot["schemaVersion"], "mousai.workspace.snapshot.v1")
         self.assertTrue(snapshot["generatedAt"].endswith("Z"))
-        self.assertEqual(snapshot["tasks"], [])
+        self.assertEqual(
+            snapshot["tasks"],
+            [
+                {
+                    "record_id": "rec-task",
+                    "fields": {
+                        "WORK-ID": "WORK-001",
+                        "任务名称": "整理第一次课资料",
+                        "类型": "行政",
+                        "所属项目": "历史建筑活化利用",
+                        "状态": "收件箱",
+                        "优先级": "普通",
+                        "下一步": "核对正式资料",
+                        "来源": "工作系统",
+                        "需要人工验收": True,
+                        "创建时间": 1787965200000,
+                        "最后更新时间": 1787968800000,
+                    },
+                }
+            ],
+        )
         self.assertEqual(snapshot["events"], [])
-        self.assertEqual(snapshot["deliverables"], [])
+        self.assertEqual(
+            snapshot["deliverables"],
+            [
+                {
+                    "work_id": "WORK-001",
+                    "generated_at": "2026-08-29T01:00:00Z",
+                    "file_count": 1,
+                    "total_size_bytes": 12,
+                    "files": [
+                        {
+                            "filename": "test.pdf",
+                            "relative_path": "deliverables/test.pdf",
+                            "extension": ".pdf",
+                            "size_bytes": 12,
+                            "sha256": "a" * 64,
+                            "modified_at": "2026-08-29T01:00:00Z",
+                        }
+                    ],
+                }
+            ],
+        )
         self.assertEqual(
             snapshot["projects"],
             [
@@ -111,6 +181,24 @@ class MousaiWorkspaceDashboardPluginTests(unittest.TestCase):
         )
         self.assertTrue(store.calls)
         self.assertEqual({method for method, _path in store.calls}, {"GET"})
+        serialized = repr(snapshot)
+        self.assertNotIn("must-not-leave-server", serialized)
+        self.assertNotIn("strip-me", serialized)
+        self.assertNotIn("local_output_root", serialized)
+
+    def test_task_and_manifest_sanitizers_fail_closed(self):
+        self.assertIsNone(self.plugin_api._sanitize_task("not-a-record"))
+        self.assertIsNone(self.plugin_api._sanitize_manifest({"fields": {"产物清单": "not-json"}}))
+        self.assertIsNone(
+            self.plugin_api._sanitize_manifest(
+                {
+                    "fields": {
+                        "WORK-ID": "WORK-001",
+                        "产物清单": '{"work_id":"WORK-OTHER","file_count":0,"total_size_bytes":0,"files":[]}',
+                    }
+                }
+            )
+        )
 
     def test_plugin_route_exposes_get_only_and_sanitizes_failures(self):
         def fail():

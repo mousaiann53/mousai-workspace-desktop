@@ -221,6 +221,19 @@ function adaptTasks(payload: unknown, issues: AdapterIssue[]): Task[] {
     const statusLabel = asTrimmedText(fields['状态'])
     const priorityLabel = asTrimmedText(fields['优先级'])
     const status = statusLabel ? (TASK_STATUSES[statusLabel] ?? 'unknown') : 'unknown'
+    const deadline = asIsoDateTime(fields.DDL)
+
+    if (statusLabel && !TASK_STATUSES[statusLabel]) {
+      issues.push(issue('workdata', 'invalid_field', `Unknown task status: ${statusLabel}`, sourceId ?? id))
+    }
+
+    if (priorityLabel && !TASK_PRIORITIES[priorityLabel]) {
+      issues.push(issue('workdata', 'invalid_field', `Unknown task priority: ${priorityLabel}`, sourceId ?? id))
+    }
+
+    if (asTrimmedText(fields.DDL) && deadline === null) {
+      issues.push(issue('workdata', 'invalid_field', 'Task DDL is invalid.', sourceId ?? id))
+    }
 
     tasks.push({
       id,
@@ -231,7 +244,7 @@ function adaptTasks(payload: unknown, issues: AdapterIssue[]): Task[] {
       statusLabel,
       priority: priorityLabel ? (TASK_PRIORITIES[priorityLabel] ?? 'unset') : 'unset',
       priorityLabel,
-      deadline: asIsoDateTime(fields.DDL),
+      deadline,
       estimate: null,
       executor: null,
       nextAction: asTrimmedText(fields['下一步']),

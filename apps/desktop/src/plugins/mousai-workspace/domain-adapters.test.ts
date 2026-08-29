@@ -78,6 +78,7 @@ describe('WorkData adapter', () => {
       deadline: null,
       workBridgeState: 'unknown'
     })
+    expect(result.issues.map(item => item.message)).toEqual(['Unknown task status: 未来状态', 'Task DDL is invalid.'])
   })
 
   it('maps the sixteen course fields only when the source supplies them', () => {
