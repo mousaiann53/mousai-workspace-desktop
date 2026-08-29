@@ -1,0 +1,11 @@
+{
+  "name": "mousai-workspace",
+  "label": "Mousai Workspace",
+  "description": "Credential-isolated, read-only Workspace snapshot backend",
+  "version": "1.0.0",
+  "tab": {
+    "hidden": true
+  },
+  "entry": "dist/index.js",
+  "api": "plugin_api.py"
+}

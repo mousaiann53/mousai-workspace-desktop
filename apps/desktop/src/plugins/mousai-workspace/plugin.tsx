@@ -2,11 +2,11 @@ import { Codicon, type HermesPlugin, host, type RouteContribution, ROUTES_AREA, 
 import { type ReactNode } from 'react'
 
 import { ProjectGallery } from './project-gallery'
-import { createUnavailableWorkspaceReadTransport } from './service-workspace-read'
+import type { WorkspaceReadTransport } from './service-workspace-read'
+import { createPluginWorkspaceReadTransport } from './transport-plugin-rest'
 
 const ID = 'mousai-workspace'
 const DEFAULT_ROUTE = '/workspace'
-const workspaceReadTransport = createUnavailableWorkspaceReadTransport()
 
 const WORKSPACE_SECTIONS = [
   { id: 'dashboard', label: '看板', path: DEFAULT_ROUTE, icon: 'dashboard' },
@@ -89,12 +89,12 @@ function DashboardPage() {
   )
 }
 
-function ProjectsPage() {
+function ProjectsPage({ transport }: { transport: WorkspaceReadTransport }) {
   const gatewayState = useValue(host.state.gateway)
 
   return (
     <WorkspacePage eyebrow="WORKSPACE" title="项目">
-      <ProjectGallery gatewayState={gatewayState} transport={workspaceReadTransport} />
+      <ProjectGallery gatewayState={gatewayState} transport={transport} />
     </WorkspacePage>
   )
 }
@@ -107,24 +107,24 @@ function PendingPage({ section }: { section: WorkspaceSection }) {
   )
 }
 
-function renderSection(section: WorkspaceSection) {
+function renderSection(section: WorkspaceSection, transport: WorkspaceReadTransport) {
   if (section.id === 'dashboard') {
     return <DashboardPage />
   }
 
   if (section.id === 'projects') {
-    return <ProjectsPage />
+    return <ProjectsPage transport={transport} />
   }
 
   return <PendingPage section={section} />
 }
 
-function routeContribution(section: WorkspaceSection) {
+function routeContribution(section: WorkspaceSection, transport: WorkspaceReadTransport) {
   return {
     id: `route-${section.id}`,
     area: ROUTES_AREA,
     data: { path: section.path } satisfies RouteContribution,
-    render: () => renderSection(section)
+    render: () => renderSection(section, transport)
   }
 }
 
@@ -134,6 +134,8 @@ const plugin: HermesPlugin = {
   description: 'Mousai work shell: Workspace navigation and V1-S1 page routes.',
   defaultEnabled: true,
   register(ctx) {
+    const workspaceReadTransport = createPluginWorkspaceReadTransport(ctx.rest)
+
     ctx.registerMany([
       {
         id: 'pane',
@@ -150,7 +152,7 @@ const plugin: HermesPlugin = {
         },
         render: () => <WorkspaceNavPane />
       },
-      ...WORKSPACE_SECTIONS.map(routeContribution)
+      ...WORKSPACE_SECTIONS.map(section => routeContribution(section, workspaceReadTransport))
     ])
 
     if (typeof host.paneVisibility === 'function') {
