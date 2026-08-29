@@ -1,5 +1,7 @@
 # Hermes Desktop ☤
 
+> This fork packages **Mousai Workspace** (`com.mousai.workspace`) on top of the upstream Hermes Desktop shell. Mousai-specific Workspace status and acceptance evidence live in [`docs/STATUS.md`](../../docs/STATUS.md); upstream Hermes behavior and development instructions below remain authoritative for the inherited shell.
+
 <p align="center">
   <a href="https://github.com/NousResearch/hermes-agent/releases"><img src="https://img.shields.io/badge/Download-macOS%20%C2%B7%20Windows%20%C2%B7%20Linux-FFD700?style=for-the-badge" alt="Download"></a>
   <a href="https://hermes-agent.nousresearch.com/docs/"><img src="https://img.shields.io/badge/Docs-hermes--agent.nousresearch.com-FFD700?style=for-the-badge" alt="Documentation"></a>

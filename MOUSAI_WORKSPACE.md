@@ -37,3 +37,11 @@ Mousai workspace 功能优先实现为（按 foot-print 从小到大）：
 ## 桌面端规则
 
 `apps/desktop/AGENTS.md` 是 desktop 包的权威规则，本文件不重复其内容。
+
+## 当前状态与验收
+
+- Desktop 当前工程状态见 `docs/STATUS.md`。
+- V1-S1 生产工作区验收见 `docs/acceptance/V1-S1-DESKTOP-PRODUCTION-SURFACES.md`。
+- upstream 核心补丁面见 `docs/acceptance/V1-S1-DESKTOP-PATCH-SURFACE.md`。
+
+Desktop UI 的工程 PASS 不代表课程正文或 WorkBuddy 真实生产任务 PASS；内容验收继续由 GPT/PM 与 Mousai 按 canonical WorkBridge 事实单独判定。
