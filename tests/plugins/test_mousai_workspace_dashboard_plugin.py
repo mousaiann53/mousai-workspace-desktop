@@ -8,6 +8,7 @@ import sys
 import tempfile
 import threading
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from pathlib import Path
 from types import SimpleNamespace
@@ -95,7 +96,7 @@ class FakeStore:
                                 "创建时间": 1787965200000,
                                 "最后更新时间": 1787968800000,
                                 "产物清单": '{"work_id":"WORK-001","generated_at":"2026-08-29T01:00:00Z","file_count":1,"total_size_bytes":12,"local_output_root":"H:\\\\private","files":[{"filename":"test.pdf","relative_path":"deliverables/test.pdf","extension":".pdf","size_bytes":12,"sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","modified_at":"2026-08-29T01:00:00Z","secret":"strip-me"}]}',
-                                "交付记录": "must-not-leave-server",
+                                "交付记录": '{"summary":{"message_id":"hidden"},"files":[{"relative_path":"deliverables/test.pdf","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","message_id":"hidden","delivered_at":"2026-08-29T01:05:00Z"}]}',
                                 "unknown": "must-not-leave-server",
                             },
                             "created_by": {"name": "must-not-leave-server"},
@@ -152,6 +153,52 @@ class MutationStore:
         raise AssertionError(f"unexpected request: {method} {path}")
 
 
+class CreateStore:
+    def __init__(self, plugin_api) -> None:
+        self.plugin_api = plugin_api
+        self.config = SimpleNamespace(base_app_token="base-token-id")
+        stamp = plugin_api.datetime.now(plugin_api.SHANGHAI_TZ).strftime("%Y%m%d")
+        self.tasks = [
+            {
+                "record_id": "rec-existing",
+                "fields": {
+                    "WORK-ID": f"WORK-{stamp}-001",
+                    "任务名称": "已有任务",
+                    "状态": "收件箱",
+                    "来源": "工作系统",
+                    "需要人工验收": True,
+                },
+            }
+        ]
+        self.project = {
+            "record_id": "rec-project",
+            "fields": {"PROJECT-ID": "PROJECT-001", "名称": "历史建筑活化利用", "类型": "教学"},
+        }
+        self.calls: list[tuple[str, str, object]] = []
+
+    def _request_json(self, method: str, path: str, payload=None):
+        self.calls.append((method, path, deepcopy(payload)))
+        if "/tables?" in path:
+            return {
+                "data": {
+                    "items": [
+                        {"name": "工作任务", "table_id": "task-table"},
+                        {"name": "项目与课程", "table_id": "project-table"},
+                    ],
+                    "has_more": False,
+                }
+            }
+        if "/task-table/records?" in path:
+            return {"data": {"items": deepcopy(self.tasks), "has_more": False}}
+        if "/project-table/records?" in path:
+            return {"data": {"items": [deepcopy(self.project)], "has_more": False}}
+        if method == "POST" and path.endswith("/task-table/records"):
+            record = {"record_id": f"rec-created-{len(self.tasks)}", "fields": deepcopy(payload["fields"])}
+            self.tasks.append(record)
+            return {"data": {"record": deepcopy(record)}}
+        raise AssertionError(f"unexpected request: {method} {path}")
+
+
 class MousaiWorkspaceDashboardPluginTests(unittest.TestCase):
     def setUp(self):
         self.plugin_api = load_plugin_api()
@@ -205,6 +252,15 @@ class MousaiWorkspaceDashboardPluginTests(unittest.TestCase):
                             "size_bytes": 12,
                             "sha256": "a" * 64,
                             "modified_at": "2026-08-29T01:00:00Z",
+                        }
+                    ],
+                    "task_status": "收件箱",
+                    "delivery_summary_sent": True,
+                    "delivered_files": [
+                        {
+                            "relative_path": "deliverables/test.pdf",
+                            "sha256": "a" * 64,
+                            "delivered_at": "2026-08-29T01:05:00Z",
                         }
                     ],
                 }
@@ -396,6 +452,97 @@ class MousaiWorkspaceDashboardPluginTests(unittest.TestCase):
         self.assertEqual(response.status_code, 409)
         self.assertEqual(response.json()["detail"]["code"], "revision_conflict")
         self.assertEqual(client.patch("/api/plugins/mousai-workspace/records/rec-task", json={}).status_code, 404)
+
+    def _create_body(self, request_id: str = "desktop:create-001", title: str = "新任务"):
+        return {
+            "clientRequestId": request_id,
+            "task": {
+                "title": title,
+                "type": "行政",
+                "projectRef": "PROJECT-001",
+                "priority": "普通",
+                "deadline": "2026-09-10",
+                "nextAction": "核对资料",
+            },
+        }
+
+    def test_formal_work_id_allocation_follows_existing_daily_sequence(self):
+        records = [
+            {"fields": {"WORK-ID": "WORK-20260829-002"}},
+            {"fields": {"WORK-ID": "WORK-20260828-999"}},
+            {"fields": {"WORK-ID": "NOT-FORMAL"}},
+        ]
+        instant = self.plugin_api.datetime(2026, 8, 29, 12, tzinfo=self.plugin_api.SHANGHAI_TZ)
+        self.assertEqual(self.plugin_api._allocate_work_id(records, today=instant), "WORK-20260829-003")
+
+    def test_create_is_durable_idempotent_and_authoritatively_unique(self):
+        store = CreateStore(self.plugin_api)
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+            self.plugin_api, "_authority_store", return_value=store
+        ), patch.object(self.plugin_api, "_create_lock_path", return_value=Path(directory) / "create.lock"):
+            first = self.plugin_api.create_task(self._create_body())
+            repeated = self.plugin_api.create_task(self._create_body())
+
+        self.assertFalse(first["idempotent"])
+        self.assertTrue(repeated["idempotent"])
+        self.assertEqual(first["workId"], repeated["workId"])
+        self.assertEqual(len(store.tasks), 2)
+        created = store.tasks[-1]["fields"]
+        self.assertEqual(created["状态"], "收件箱")
+        self.assertTrue(created["需要人工验收"])
+        self.assertRegex(created["来源"], r"^Mousai Workspace create:desktop:create-001:[0-9a-f]{64}$")
+
+    def test_create_serializes_concurrent_requests_without_duplicate_work_ids(self):
+        store = CreateStore(self.plugin_api)
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+            self.plugin_api, "_authority_store", return_value=store
+        ), patch.object(self.plugin_api, "_create_lock_path", return_value=Path(directory) / "create.lock"):
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                results = list(
+                    pool.map(
+                        lambda request_id: self.plugin_api.create_task(self._create_body(request_id=request_id)),
+                        ["desktop:create-001", "desktop:create-002"],
+                    )
+                )
+
+        work_ids = [result["workId"] for result in results]
+        self.assertEqual(len(work_ids), len(set(work_ids)))
+        self.assertEqual(len(store.tasks), 3)
+
+    def test_create_serializes_concurrent_retries_as_one_record(self):
+        store = CreateStore(self.plugin_api)
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+            self.plugin_api, "_authority_store", return_value=store
+        ), patch.object(self.plugin_api, "_create_lock_path", return_value=Path(directory) / "create.lock"):
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                results = list(pool.map(lambda _: self.plugin_api.create_task(self._create_body()), range(4)))
+
+        self.assertEqual({result["workId"] for result in results}, {results[0]["workId"]})
+        self.assertEqual(sum(not result["idempotent"] for result in results), 1)
+        self.assertEqual(len(store.tasks), 2)
+
+    def test_create_rejects_reused_request_id_with_different_facts(self):
+        store = CreateStore(self.plugin_api)
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+            self.plugin_api, "_authority_store", return_value=store
+        ), patch.object(self.plugin_api, "_create_lock_path", return_value=Path(directory) / "create.lock"):
+            self.plugin_api.create_task(self._create_body())
+            with self.assertRaises(self.plugin_api.WorkspaceMutationProblem) as raised:
+                self.plugin_api.create_task(self._create_body(title="另一个任务"))
+        self.assertEqual(raised.exception.code, "client_request_reused")
+        self.assertEqual(len(store.tasks), 2)
+
+    def test_create_route_is_explicit_and_sanitizes_failures(self):
+        app = FastAPI()
+        app.include_router(self.plugin_api.router, prefix="/api/plugins/mousai-workspace")
+        client = TestClient(app, raise_server_exceptions=False)
+        conflict = self.plugin_api.WorkspaceMutationProblem(
+            409, "client_request_reused", "clientRequestId was used for another task"
+        )
+        with patch.object(self.plugin_api, "create_task", side_effect=conflict):
+            response = client.post("/api/plugins/mousai-workspace/tasks", json=self._create_body())
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()["detail"]["code"], "client_request_reused")
 
     def test_env_reader_never_loads_workbridge_bearer_token(self):
         with tempfile.TemporaryDirectory() as directory:

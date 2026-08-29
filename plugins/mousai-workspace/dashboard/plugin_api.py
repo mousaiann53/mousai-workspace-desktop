@@ -17,7 +17,9 @@ import os
 import re
 import stat
 import sys
+import threading
 import urllib.parse
+from contextlib import contextmanager
 from datetime import date, datetime, time, timezone
 from functools import lru_cache
 from pathlib import Path
@@ -47,6 +49,7 @@ WORK_ID_RE = re.compile(r"^[A-Z][A-Z0-9-]{5,63}$")
 CLIENT_REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$")
 REVISION_RE = re.compile(r"^[0-9a-f]{64}$")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+FORMAL_WORK_ID_RE = re.compile(r"^WORK-(\d{8})-(\d{3})$")
 
 TASK_TYPE_VALUES = frozenset({"教学", "科研", "行政", "创意制作"})
 TASK_PRIORITY_VALUES = frozenset({"低", "普通", "高", "紧急"})
@@ -56,6 +59,7 @@ TASK_EDITABLE_STATUSES = frozenset({"收件箱", "已分类", "待验收", "资�
 TASK_COMPLETABLE_STATUSES = frozenset({"收件箱", "已分类", "待验收"})
 
 TASK_MUTATION_FIELDS = frozenset({"title", "type", "projectRef", "priority", "deadline", "nextAction"})
+TASK_CREATE_FIELDS = TASK_MUTATION_FIELDS
 TASK_MUTATION_FIELD_MAP = {
     "title": "任务名称",
     "type": "类型",
@@ -123,6 +127,7 @@ TASK_FIELD_ALLOWLIST = frozenset(
     }
 )
 MANIFEST_SOURCE_FIELD = "产物清单"
+DELIVERY_SOURCE_FIELD = "交付记录"
 MANIFEST_FILE_ALLOWLIST = frozenset(
     {"filename", "relative_path", "extension", "size_bytes", "sha256", "modified_at"}
 )
@@ -136,6 +141,7 @@ _WORKDATA_ENV_KEYS = frozenset(
         "WORKBRIDGE_FEISHU_BASE_URL",
     }
 )
+_CREATE_THREAD_LOCK = threading.Lock()
 
 
 class WorkspaceAuthorityUnavailable(RuntimeError):
@@ -326,12 +332,39 @@ def _sanitize_manifest(record: Any) -> dict[str, Any] | None:
             if isinstance(value, (int, str)) and not isinstance(value, bool)
         }
         clean_files.append(clean)
+    delivered_files: list[dict[str, str]] = []
+    delivery_summary_sent = False
+    delivery_raw = _text_value(record["fields"].get(DELIVERY_SOURCE_FIELD))
+    if delivery_raw and len(delivery_raw) <= MAX_TEXT_LENGTH * 8:
+        try:
+            delivery = json.loads(delivery_raw)
+        except (TypeError, ValueError):
+            delivery = None
+        if isinstance(delivery, dict):
+            delivery_summary_sent = isinstance(delivery.get("summary"), dict)
+            for candidate in delivery.get("files") or []:
+                if not isinstance(candidate, dict):
+                    continue
+                relative_path = _text_value(candidate.get("relative_path"))
+                sha256 = _text_value(candidate.get("sha256"))
+                delivered_at = _text_value(candidate.get("delivered_at"))
+                if relative_path and sha256:
+                    delivered_files.append(
+                        {
+                            "relative_path": relative_path[:MAX_TEXT_LENGTH],
+                            "sha256": sha256[:128],
+                            **({"delivered_at": delivered_at[:MAX_TEXT_LENGTH]} if delivered_at else {}),
+                        }
+                    )
     return {
         "work_id": work_id[:256],
         "generated_at": _text_value(manifest.get("generated_at")),
         "file_count": manifest.get("file_count"),
         "total_size_bytes": manifest.get("total_size_bytes"),
         "files": clean_files,
+        "task_status": _text_value(record["fields"].get("状态")),
+        "delivery_summary_sent": delivery_summary_sent,
+        "delivered_files": delivered_files,
     }
 
 
@@ -479,6 +512,52 @@ def _update_task_record(store: Any, table_id: str, record_id: str, fields: dict[
     )
 
 
+def _create_task_record(store: Any, table_id: str, fields: dict[str, Any]) -> dict[str, Any]:
+    app = urllib.parse.quote(store.config.base_app_token, safe="")
+    table = urllib.parse.quote(table_id, safe="")
+    response = store._request_json(
+        "POST",
+        f"/open-apis/bitable/v1/apps/{app}/tables/{table}/records",
+        {"fields": fields},
+    )
+    record = (response.get("data") or {}).get("record")
+    if not isinstance(record, dict):
+        raise WorkspaceAuthorityUnavailable("Task creation did not return a record")
+    return record
+
+
+def _create_lock_path() -> Path:
+    home = Path(os.environ.get("HERMES_HOME", "~/.hermes")).expanduser()
+    return home / "state" / "mousai-workspace" / "create.lock"
+
+
+@contextmanager
+def _create_lock():
+    """Serialize allocation across the main and Desktop gateway processes."""
+
+    lock_path = _create_lock_path()
+    try:
+        lock_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        os.chmod(lock_path.parent, 0o700)
+        handle = lock_path.open("a+b")
+        os.chmod(lock_path, 0o600)
+    except OSError as exc:
+        raise WorkspaceAuthorityUnavailable("Task creation lock is unavailable") from exc
+
+    with handle, _CREATE_THREAD_LOCK:
+        try:
+            import fcntl
+        except ImportError:  # pragma: no cover - Windows unit tests use the process lock.
+            fcntl = None
+        if fcntl is not None:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            if fcntl is not None:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
 def _validate_work_id(work_id: str) -> None:
     if not WORK_ID_RE.fullmatch(work_id):
         raise WorkspaceMutationProblem(400, "invalid_work_id", "WORK-ID is invalid")
@@ -568,6 +647,131 @@ def _edit_mapper(store: Any, changes: Any) -> tuple[dict[str, Any], dict[str, An
             desired[key] = _validate_nullable_text(value, field="next_action", maximum=MAX_NEXT_ACTION_LENGTH)
             workdata_fields[TASK_MUTATION_FIELD_MAP[key]] = desired[key]
     return workdata_fields, desired
+
+
+def _validate_create_body(store: Any, body: Any) -> tuple[str, dict[str, Any], dict[str, Any]]:
+    if not isinstance(body, dict):
+        raise WorkspaceMutationProblem(400, "invalid_body", "Request body must be a JSON object")
+    allowed = frozenset({"clientRequestId", "task"})
+    if set(body) - allowed:
+        raise WorkspaceMutationProblem(400, "unknown_field", "Request contains an unsupported field")
+    if set(body) != allowed:
+        raise WorkspaceMutationProblem(400, "missing_field", "Task creation request is incomplete")
+    client_request_id = body.get("clientRequestId")
+    if not isinstance(client_request_id, str) or not CLIENT_REQUEST_ID_RE.fullmatch(client_request_id):
+        raise WorkspaceMutationProblem(400, "invalid_client_request_id", "clientRequestId is invalid")
+    task = body.get("task")
+    if not isinstance(task, dict) or set(task) - TASK_CREATE_FIELDS or "title" not in task:
+        raise WorkspaceMutationProblem(400, "invalid_create_fields", "Task creation fields are invalid")
+    workdata_fields, desired = _edit_mapper(store, task)
+    return client_request_id, workdata_fields, desired
+
+
+def _create_source_prefix(client_request_id: str) -> str:
+    return f"Mousai Workspace create:{client_request_id}:"
+
+
+def _create_source(client_request_id: str, desired: dict[str, Any]) -> str:
+    fingerprint = hashlib.sha256(
+        json.dumps(desired, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    return _create_source_prefix(client_request_id) + fingerprint
+
+
+def _create_desired_matches(record: dict[str, Any], desired: dict[str, Any], source: str) -> bool:
+    fields = record.get("fields") if isinstance(record.get("fields"), dict) else {}
+    return (
+        _desired_matches(record, {**desired, "status": "收件箱"})
+        and _text_value(fields.get("来源")) == source
+        and fields.get("需要人工验收") is True
+    )
+
+
+def _allocate_work_id(records: list[dict[str, Any]], *, today: datetime | None = None) -> str:
+    stamp = (today or datetime.now(SHANGHAI_TZ)).astimezone(SHANGHAI_TZ).strftime("%Y%m%d")
+    sequences = []
+    for record in records:
+        fields = record.get("fields") if isinstance(record.get("fields"), dict) else {}
+        work_id = _text_value(fields.get("WORK-ID"))
+        match = FORMAL_WORK_ID_RE.fullmatch(work_id or "")
+        if match and match.group(1) == stamp:
+            sequences.append(int(match.group(2)))
+    sequence = max(sequences, default=0) + 1
+    if sequence > 999:
+        raise WorkspaceMutationProblem(409, "work_id_sequence_exhausted", "Daily WORK-ID sequence is exhausted")
+    return f"WORK-{stamp}-{sequence:03d}"
+
+
+def _records_by_source(records: list[dict[str, Any]], source: str, *, prefix: bool = False) -> list[dict[str, Any]]:
+    return [
+        record
+        for record in records
+        if (
+            (_text_value((record.get("fields") or {}).get("来源")) or "").startswith(source)
+            if prefix
+            else _text_value((record.get("fields") or {}).get("来源")) == source
+        )
+    ]
+
+
+def create_task(body: Any) -> dict[str, Any]:
+    store = _authority_store()
+    client_request_id, workdata_fields, desired = _validate_create_body(store, body)
+    source_prefix = _create_source_prefix(client_request_id)
+    source = _create_source(client_request_id, desired)
+    table_id = _task_table(store)
+
+    with _create_lock():
+        records = _read_records(store, table_id, limit=MAX_TASK_RECORDS)
+        existing = _records_by_source(records, source_prefix, prefix=True)
+        if len(existing) > 1:
+            raise WorkspaceMutationProblem(409, "duplicate_client_request", "clientRequestId is not unique")
+        if existing:
+            record = existing[0]
+            if _text_value((record.get("fields") or {}).get("来源")) != source or not _create_desired_matches(
+                record, desired, source
+            ):
+                raise WorkspaceMutationProblem(409, "client_request_reused", "clientRequestId was used for another task")
+            work_id = _text_value((record.get("fields") or {}).get("WORK-ID"))
+            if not work_id:
+                raise WorkspaceAuthorityUnavailable("Created task has no WORK-ID")
+            return _mutation_result(
+                work_id=work_id,
+                action="create",
+                idempotent=True,
+                record=record,
+                changed={**desired, "status": "收件箱"},
+            )
+
+        work_id = _allocate_work_id(records)
+        fields = {
+            "WORK-ID": work_id,
+            **workdata_fields,
+            "状态": "收件箱",
+            "来源": source,
+            "需要人工验收": True,
+        }
+        _create_task_record(store, table_id, fields)
+
+        authoritative = _read_records(store, table_id, limit=MAX_TASK_RECORDS)
+        by_work_id = [
+            record
+            for record in authoritative
+            if _text_value((record.get("fields") or {}).get("WORK-ID")) == work_id
+        ]
+        by_source = _records_by_source(authoritative, source)
+        if len(by_work_id) != 1 or len(by_source) != 1 or by_work_id[0].get("record_id") != by_source[0].get("record_id"):
+            raise WorkspaceMutationProblem(409, "create_uniqueness_failed", "Created task is not authoritative and unique")
+        record = by_work_id[0]
+        if not _create_desired_matches(record, desired, source):
+            raise WorkspaceAuthorityUnavailable("Created task could not be verified")
+        return _mutation_result(
+            work_id=work_id,
+            action="create",
+            idempotent=False,
+            record=record,
+            changed={**desired, "status": "收件箱"},
+        )
 
 
 def _desired_matches(record: dict[str, Any], desired: dict[str, Any]) -> bool:
@@ -723,6 +927,29 @@ def _run_mutation(work_id: str, action: str, body: Any) -> dict[str, Any]:
         raise HTTPException(
             status_code=502,
             detail={"code": "workspace_mutation_failed", "message": "Workspace task update failed"},
+        ) from exc
+
+
+@router.post("/tasks")
+def post_task(body: dict[str, Any]):
+    try:
+        return create_task(body)
+    except WorkspaceMutationProblem as exc:
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail={"code": exc.code, "message": exc.message},
+        ) from exc
+    except WorkspaceAuthorityUnavailable as exc:
+        log.warning("workspace create authority unavailable type=%s", type(exc).__name__)
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "workspace_authority_unavailable", "message": "Workspace data is unavailable"},
+        ) from exc
+    except Exception as exc:
+        log.warning("workspace create failed type=%s", type(exc).__name__)
+        raise HTTPException(
+            status_code=502,
+            detail={"code": "workspace_create_failed", "message": "Workspace task creation failed"},
         ) from exc
 
 
