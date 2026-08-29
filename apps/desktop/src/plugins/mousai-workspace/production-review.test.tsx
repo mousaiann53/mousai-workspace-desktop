@@ -301,9 +301,14 @@ describe('Production Review presentation', () => {
     fireEvent.click(screen.getByRole('button', { name: '批准范围' }))
 
     expect(screen.getByRole('dialog')).toBeTruthy()
+    expect(screen.getByText(/批准下方完整 Scope items/)).toBeTruthy()
     expect(screen.getAllByText(task.id).length).toBeGreaterThanOrEqual(2)
     expect(screen.getByText('WAITING_HUMAN_APPROVAL')).toBeTruthy()
     expect(screen.getAllByText('未设置 / 等待输入').length).toBeGreaterThanOrEqual(3)
+    fireEvent.change(screen.getByLabelText('本次 Scope items（每行一项）'), {
+      target: { value: 'M5 已批准结构\nM5 已批准交付格式' }
+    })
+    expect(screen.getByText('M5 已批准结构；M5 已批准交付格式')).toBeTruthy()
     expect(screen.getByRole('button', { name: '确认批准范围' })).toBeTruthy()
     expect(actionTransport.approveProductionScope).not.toHaveBeenCalled()
     expect(actionTransport.startProduction).not.toHaveBeenCalled()
@@ -379,6 +384,11 @@ describe('Production Review presentation', () => {
     render(<ProductionReviewCard item={item} onOpenLocal={vi.fn()} onRefresh={onRefresh} transport={transport} />)
 
     fireEvent.click(screen.getByRole('button', { name: '最终通过' }))
+    expect(screen.getByText(/保存本次人工验收 metadata/)).toBeTruthy()
+    expect((screen.getByRole('button', { name: '确认最终通过' }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.change(screen.getByLabelText('Acceptance comment（必填）'), {
+      target: { value: 'Mousai 已核对交付 metadata' }
+    })
     fireEvent.click(screen.getByRole('button', { name: '确认最终通过' }))
 
     await waitFor(() => expect(onRefresh).toHaveBeenCalledTimes(1))

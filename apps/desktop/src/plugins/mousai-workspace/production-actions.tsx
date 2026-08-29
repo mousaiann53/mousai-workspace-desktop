@@ -29,6 +29,14 @@ const ACTION_LABELS: Readonly<Record<ProductionAction, string>> = {
   accept: '最终通过'
 }
 
+const ACTION_IMPACTS: Readonly<Record<ProductionAction, string>> = {
+  prepare: '保存受控生产元数据并重新计算前置 Gate；不会批准 Scope，也不会启动生产。',
+  scope: '批准下方完整 Scope items；批准完成后仍需另行点击“开始生产”。',
+  start: '按当前已批准 Scope 启动生产；不会扩大或改写批准范围。',
+  revision: '把当前待验收交付退回修订，并保存 Revision reason 与 Mousai 审阅意见。',
+  accept: '保存本次人工验收 metadata，并把当前交付推进到最终通过。'
+}
+
 function lines(value: string): readonly string[] {
   return value
     .split(/\r?\n/)
@@ -159,7 +167,7 @@ export function ProductionActionPanel({
     action === 'start' ||
     (action === 'scope' && Boolean(review?.bundleMeta) && scopeVersion >= 1 && actionScopeItems.length > 0) ||
     (action === 'revision' && revision >= 2 && Boolean(revisionReason.trim()) && Boolean(reviewerComment.trim())) ||
-    (action === 'accept' && Boolean(acceptanceVerdict.trim()))
+    (action === 'accept' && Boolean(acceptanceVerdict.trim()) && Boolean(acceptanceComment.trim()))
 
   function openAction(next: ProductionAction) {
     setError(null)
@@ -264,7 +272,10 @@ export function ProductionActionPanel({
         <DialogContent className="max-h-[85vh] max-w-xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{action ? ACTION_LABELS[action] : 'Production Action'}</DialogTitle>
-            <DialogDescription>只提交当前明确动作；不会自动批准、自动 start 或乐观改写 Gate。</DialogDescription>
+            <DialogDescription>
+              {action ? ACTION_IMPACTS[action] : '只提交当前明确动作。'}不会乐观改写 Gate；最终状态以刷新后的 canonical
+              snapshot 为准。
+            </DialogDescription>
           </DialogHeader>
 
           {action === 'prepare' && (
@@ -347,7 +358,7 @@ export function ProductionActionPanel({
                 <Input onChange={event => setAcceptanceVerdict(event.target.value)} value={acceptanceVerdict} />
               </label>
               <label className="block text-xs">
-                <span className="mb-1 block text-(--ui-text-tertiary)">Acceptance comment</span>
+                <span className="mb-1 block text-(--ui-text-tertiary)">Acceptance comment（必填）</span>
                 <Textarea onChange={event => setAcceptanceComment(event.target.value)} value={acceptanceComment} />
               </label>
             </div>
