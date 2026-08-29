@@ -185,7 +185,7 @@ test('render: BotRow shows the sender badge and stripped DM preview', () => {
 test('render: BotRow renders plain previews without a badge', () => {
   const r = renderRuntime()
   const tree = r.__BotRow({
-    bot: { name: 'ops', title: 'Ops', description: '', last_session: { id: 's2', title: 'Weekly review', preview: 'All hosts are healthy', last_active: 1_700_000_000 } },
+    bot: { name: 'ops', title: 'Ops', description: '', preferred_session: { id: 's2', title: 'Bot Chat', preview: 'All hosts are healthy', last_active: 1_700_000_000 } },
     onEdit: () => undefined
   })
   const text = textOf(tree)
@@ -194,6 +194,28 @@ test('render: BotRow renders plain previews without a badge', () => {
   // The inline session-history chip is gone — the conversation lives in the
   // bot's one canonical chat, so the title no longer renders inline.
   assert.doesNotMatch(text, /Weekly review/)
+})
+
+test('render: BotRow does not show a QQ message when no canonical Bot Chat exists', () => {
+  const r = renderRuntime()
+  const tree = r.__BotRow({
+    bot: {
+      name: 'ops',
+      title: 'Ops',
+      description: 'Your workspace bot',
+      last_session: {
+        id: 'qq-dm',
+        source: 'qqbot',
+        title: 'QQ friend',
+        preview: '我是乙木，你的工作总管',
+        last_active: 1_800_000_000
+      }
+    },
+    onEdit: () => undefined
+  })
+  const text = textOf(tree)
+  assert.match(text, /Your workspace bot/)
+  assert.doesNotMatch(text, /我是乙木/)
 })
 
 test('render: BotRow tolerates a fresh bot with no sessions yet', () => {

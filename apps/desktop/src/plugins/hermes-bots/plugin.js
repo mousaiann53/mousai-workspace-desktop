@@ -6189,26 +6189,36 @@ function generatedSessionTitle(session, preview) {
  *  seconds is treated as "active now" (pulsing dot in its row). */
 const ACTIVE_WINDOW_S = 90
 
-/** The session whose activity best represents this bot — the FRESHER of the
- *  pinned canonical Bot Chat (preferred_session) and the profile's newest
- *  visible conversation (last_session).
+/** The session whose activity represents this roster row: its canonical
+ *  Bot Chat, never the profile's newest unrelated or external-channel session.
  *
  *  Canonical Bot Chats are hidden from the session list by design, so
  *  last_session alone never sees them: a bot you talk to all day through its
  *  Bot Chat reads "6d ago" because its newest VISIBLE session is a week old.
- *  #88690 moved the preview text to preferred_session but left every activity
- *  signal (age label, pulse dot, unread watermark, recency sort) on
- *  last_session. All of them key off this helper now. Older gateways without
- *  the preferred_session resolver degrade to last_session unchanged. */
+ *  Conversely, taking the fresher of the two leaks QQ/Weixin/Feishu activity
+ *  into a row that opens Bot Chat. Preview, age, pulse, unread watermark, and
+ *  recency sort all key off this resolver so display identity matches click
+ *  identity. Older gateways may fall back only when last_session is itself an
+ *  actual Bot Chat. */
 function botActivitySession(bot) {
   const preferred = bot?.preferred_session
   const last = bot?.last_session
 
-  if (!preferred || !last) {
-    return preferred || last || null
-  }
+  // preferred_session is the exact durable row pin supplied by this plugin.
+  // It is authoritative even on older gateways whose compact summary omitted
+  // title metadata.
+  if (preferred) return preferred
+  if (!last) return null
 
-  return (preferred.last_active || 0) >= (last.last_active || 0) ? preferred : last
+  const rootTitle = String(last.root_title || '').trim()
+  const title = String(last.title || '').trim()
+  if (rootTitle === 'Bot Chat' || (!rootTitle && title === 'Bot Chat')) return last
+
+  // Pre-source gateways cannot distinguish a legacy Bot Chat from another
+  // visible session. Preserve their old fallback; current gateways always
+  // report source, which lets external channels be excluded safely.
+  if (!String(last.source || '').trim()) return last
+  return null
 }
 
 /** Worker liveness window: kanban/tool workers heartbeat last_activity_at
@@ -6249,7 +6259,6 @@ function BotRow({ bot, onDelete, onEdit, onGroup }) {
   const activeGroup = useValue($groupChatWorkspace)
   const meta = botRosterMeta(bot, useValue($botMeta))
   const groups = botGroups(meta)
-  const last = bot.last_session
   // Highlight follows the chat on screen (focused session's owner), not the
   // gateway socket's home — a focused tab doesn't swap the socket, and on the
   // old keying the wrong bot stayed highlighted while you read another's chat.
@@ -6262,14 +6271,12 @@ function BotRow({ bot, onDelete, onEdit, onGroup }) {
   // Keep user photos/pets. Drop the 160px SVG backfill so the math face can move.
   const photo = Boolean(image && !isBackfilledFacePng(image))
   const gatewayState = useValue(host.state.gateway)
-  // Preview identity must match click identity (#88200): when the backend
-  // resolved the pinned canonical chat, preview THAT session — not the
-  // profile's most recent (but unrelated) activity. Activity signals
-  // (age label, pulse dot) follow the same rule via botActivitySession:
-  // the canonical Bot Chat is hidden from last_session, so keying age off
-  // last_session alone shows "6d ago" on a bot you just messaged.
-  const previewSession = bot.preferred_session || last
-  const activitySession = botActivitySession(bot)
+  // Preview identity must match click identity (#88200): only show the
+  // canonical Bot Chat. QQ/Weixin/Feishu and other visible sessions belong in
+  // Sessions and must not leak their message, timestamp, or unread state into
+  // a roster row that opens a different conversation.
+  const previewSession = botActivitySession(bot)
+  const activitySession = previewSession
   // A live kanban/tool worker counts as activity (#90268): pulse + fresh
   // age while it runs, falling back to chat activity when it ends.
   const workerActive = workerActiveAt(bot)
@@ -11412,7 +11419,7 @@ function BotsPane() {
               const id = await openBotCanonicalChat(
                 bot.name,
                 pinnedChat,
-                bot.preferred_session || bot.last_session
+                botActivitySession(bot)
               )
 
               if (generation === botOpenGeneration && id) {

@@ -34,8 +34,8 @@ function loadBotActivitySession() {
 const NOW = 1_000_000_000_000
 
 const roster = [
-  { name: 'researcher', last_session: { last_active: (NOW / 1000) - 10 } },
-  { name: 'scribe', last_session: { last_active: (NOW / 1000) - 400 } },
+  { name: 'researcher', last_session: { title: 'Bot Chat', last_active: (NOW / 1000) - 10 } },
+  { name: 'scribe', last_session: { title: 'Bot Chat', last_active: (NOW / 1000) - 400 } },
   { name: 'analyst', last_session: null }
 ]
 
@@ -70,7 +70,7 @@ test('activeBots preserves roster order and never hides other bots', () => {
 test('activeBots returns an empty list when nothing is active', () => {
   const activeBots = loadActiveBots()
   const quiet = [
-    { name: 'scribe', last_session: { last_active: (NOW / 1000) - 400 } },
+    { name: 'scribe', last_session: { title: 'Bot Chat', last_active: (NOW / 1000) - 400 } },
     { name: 'analyst', last_session: null }
   ]
   assert.deepEqual(activeBots(quiet, 'default', 'open', NOW), [])
@@ -84,30 +84,31 @@ test('roster without profiles never throws', () => {
 
 // ── botActivitySession: canonical Bot Chat activity counts (hermes-agent "6d ago" bug) ──
 
-test('botActivitySession picks the fresher preferred_session over a stale last_session', () => {
+test('botActivitySession keeps the canonical preferred_session over a stale last_session', () => {
   const botActivitySession = loadBotActivitySession()
   const bot = {
     // Canonical Bot Chat (hidden from session lists): messaged seconds ago.
-    preferred_session: { id: 'bot-chat', last_active: NOW / 1000 - 5, preview: 'fresh DM' },
+    preferred_session: { id: 'bot-chat', title: 'Bot Chat', last_active: NOW / 1000 - 5, preview: 'fresh DM' },
     // Newest VISIBLE session: 6 days old — what last_session alone reports.
     last_session: { id: 'old-scratch', last_active: NOW / 1000 - 6 * 86400, preview: 'ancient' }
   }
   assert.equal(botActivitySession(bot).id, 'bot-chat')
 })
 
-test('botActivitySession keeps last_session when it is the fresher one', () => {
+test('botActivitySession rejects a fresher external-channel last_session', () => {
   const botActivitySession = loadBotActivitySession()
   const bot = {
-    preferred_session: { id: 'bot-chat', last_active: NOW / 1000 - 3600 },
-    last_session: { id: 'scratch', last_active: NOW / 1000 - 10 }
+    preferred_session: { id: 'bot-chat', title: 'Bot Chat', last_active: NOW / 1000 - 3600 },
+    last_session: { id: 'qq-dm', source: 'qqbot', title: 'QQ friend', last_active: NOW / 1000 - 10 }
   }
-  assert.equal(botActivitySession(bot).id, 'scratch')
+  assert.equal(botActivitySession(bot).id, 'bot-chat')
 })
 
-test('botActivitySession degrades to whichever side exists (older gateways / no pin)', () => {
+test('botActivitySession falls back only to a canonical Bot Chat on older gateways', () => {
   const botActivitySession = loadBotActivitySession()
-  assert.equal(botActivitySession({ last_session: { id: 'only', last_active: 1 } }).id, 'only')
-  assert.equal(botActivitySession({ preferred_session: { id: 'pin', last_active: 1 } }).id, 'pin')
+  assert.equal(botActivitySession({ last_session: { id: 'legacy', title: 'Bot Chat', last_active: 1 } }).id, 'legacy')
+  assert.equal(botActivitySession({ last_session: { id: 'qq', source: 'qqbot', title: 'QQ friend', last_active: 2 } }), null)
+  assert.equal(botActivitySession({ preferred_session: { id: 'pin', title: 'Bot Chat', last_active: 1 } }).id, 'pin')
   assert.equal(botActivitySession({}), null)
   assert.equal(botActivitySession(null), null)
 })
@@ -117,12 +118,23 @@ test('activeBots counts Bot Chat activity that last_session cannot see', () => {
   const bots = [
     {
       name: 'default',
-      preferred_session: { last_active: NOW / 1000 - 5 },
+      preferred_session: { title: 'Bot Chat', last_active: NOW / 1000 - 5 },
       last_session: { last_active: NOW / 1000 - 6 * 86400 }
     }
   ]
   const names = activeBots(bots, 'other', 'open', NOW).map(bot => bot.name)
   assert.ok(names.includes('default'), 'fresh canonical-chat activity must light the pulse dot')
+})
+
+test('activeBots ignores fresh activity that exists only in an external channel', () => {
+  const activeBots = loadActiveBots()
+  const bots = [
+    {
+      name: 'default',
+      last_session: { source: 'qqbot', title: 'QQ group', last_active: NOW / 1000 - 5 }
+    }
+  ]
+  assert.deepEqual(activeBots(bots, 'other', 'open', NOW), [])
 })
 
 test('row age label and recency sort key off botActivitySession, not last_session', () => {
@@ -181,5 +193,5 @@ test('ActiveNowStrip renders above the roster, is a live region, and is click-ac
   assert.match(source, /jsx\(BotFace,\s*\{[\s\S]*?mood: 'work'/)
   assert.match(source, /let pinnedChat = botRosterMeta\(bot, allMeta\)\?\.chat/)
   assert.match(source, /await prepareBotSource\(bot, pinnedChat\)/)
-  assert.match(source, /bot\.preferred_session \|\| bot\.last_session/)
+  assert.match(source, /openBotCanonicalChat\([\s\S]*?botActivitySession\(bot\)/)
 })

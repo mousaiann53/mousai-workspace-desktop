@@ -1346,9 +1346,15 @@ class QQAdapter(BasePlatformAdapter):
         group_openid = str(d.get("group_openid", ""))
         if not group_openid:
             return
-        if not self._is_group_allowed(
-                group_openid, str(author.get("member_openid", ""))
-        ):
+        member_openid = str(author.get("member_openid", ""))
+        if not self._is_group_allowed(group_openid, member_openid):
+            logger.warning(
+                "[%s] Unauthorized QQ group: %s (member=%s, policy=%s)",
+                self._log_tag,
+                group_openid,
+                member_openid,
+                self._group_policy,
+            )
             return
 
         # Strip the @bot mention prefix from content
@@ -1386,7 +1392,7 @@ class QQAdapter(BasePlatformAdapter):
         event = MessageEvent(
             source=self.build_source(
                 chat_id=group_openid,
-                user_id=str(author.get("member_openid", "")),
+                user_id=member_openid,
                 chat_type="group",
             ),
             text=text,
