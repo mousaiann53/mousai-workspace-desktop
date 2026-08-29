@@ -4,8 +4,11 @@ import { useSearchParams } from 'react-router'
 
 import { ProjectDetail } from './project-detail'
 import { ProjectGallery } from './project-gallery'
+import { createLocalDeliverableAccess, type LocalDeliverableAccess } from './service-local-deliverables'
+import { createTaskCreateDraftStore, type TaskCreateDraftStore } from './service-task-create-draft'
 import type { WorkspaceTaskMutationTransport } from './service-task-mutation'
 import type { WorkspaceReadTransport } from './service-workspace-read'
+import { TaskCenter } from './task-center'
 import { createPluginWorkspaceReadTransport } from './transport-plugin-rest'
 
 const ID = 'mousai-workspace'
@@ -36,7 +39,9 @@ function WorkspaceNavPane() {
   return (
     <div className="flex h-full min-h-0 flex-col bg-(--ui-sidebar-surface-background)">
       <div className="border-b border-(--ui-stroke-quaternary) px-3 py-3">
-        <div className="text-[0.6875rem] font-medium tracking-[0.16em] text-(--ui-text-quaternary)">MOUSAI WORKSPACE</div>
+        <div className="text-[0.6875rem] font-medium tracking-[0.16em] text-(--ui-text-quaternary)">
+          MOUSAI WORKSPACE
+        </div>
       </div>
 
       <nav aria-label="Workspace" className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto p-2">
@@ -61,7 +66,9 @@ function WorkspacePage({ title, eyebrow, children }: { title: string; eyebrow?: 
     <main className="h-full min-h-0 overflow-y-auto bg-(--ui-editor-surface-background) px-6 pb-10 pt-14 text-foreground">
       <div className="mx-auto w-full max-w-6xl">
         {eyebrow && (
-          <div className="mb-2 text-[0.6875rem] font-medium tracking-[0.16em] text-(--ui-text-quaternary)">{eyebrow}</div>
+          <div className="mb-2 text-[0.6875rem] font-medium tracking-[0.16em] text-(--ui-text-quaternary)">
+            {eyebrow}
+          </div>
         )}
         <h1 className="text-xl font-medium tracking-tight">{title}</h1>
         <div className="mt-6">{children}</div>
@@ -84,7 +91,10 @@ function DashboardPage() {
     <WorkspacePage eyebrow="WORKSPACE" title="看板">
       <div className="grid gap-3 md:grid-cols-2">
         <EmptyPanel copy="尚未接入 Workspace Domain Adapter。M2-B 不显示演示项目或伪造进度。" title="最近活跃项目" />
-        <EmptyPanel copy="暂无可回读的 Workspace 数据。接入真实项目数据后在这里显示 DDL 与风险。" title="临近 DDL 与风险" />
+        <EmptyPanel
+          copy="暂无可回读的 Workspace 数据。接入真实项目数据后在这里显示 DDL 与风险。"
+          title="临近 DDL 与风险"
+        />
         <EmptyPanel copy="任务数据将在后续数据接入阶段回读；当前保持真实空状态。" title="今日 / 下一步" />
         <EmptyPanel copy="尚无可汇总的 Workspace 活动数据。" title="本周工作摘要" />
       </div>
@@ -94,7 +104,13 @@ function DashboardPage() {
 
 type WorkspaceTransport = WorkspaceReadTransport & WorkspaceTaskMutationTransport
 
-function ProjectsPage({ transport }: { transport: WorkspaceTransport }) {
+function ProjectsPage({
+  localAccess,
+  transport
+}: {
+  localAccess: LocalDeliverableAccess
+  transport: WorkspaceTransport
+}) {
   const gatewayState = useValue(host.state.gateway)
   const [searchParams] = useSearchParams()
   const projectId = searchParams.get('project')
@@ -104,6 +120,7 @@ function ProjectsPage({ transport }: { transport: WorkspaceTransport }) {
       {projectId ? (
         <ProjectDetail
           gatewayState={gatewayState}
+          localAccess={localAccess}
           mutationTransport={transport}
           onBack={() => navigateWorkspace('/workspace/projects')}
           projectId={projectId}
@@ -120,6 +137,16 @@ function ProjectsPage({ transport }: { transport: WorkspaceTransport }) {
   )
 }
 
+function TasksPage({ draftStore, transport }: { draftStore: TaskCreateDraftStore; transport: WorkspaceTransport }) {
+  const gatewayState = useValue(host.state.gateway)
+
+  return (
+    <WorkspacePage eyebrow="WORKSPACE" title="待办">
+      <TaskCenter draftStore={draftStore} gatewayState={gatewayState} transport={transport} />
+    </WorkspacePage>
+  )
+}
+
 function PendingPage({ section }: { section: WorkspaceSection }) {
   return (
     <WorkspacePage eyebrow="WORKSPACE" title={section.label}>
@@ -128,24 +155,38 @@ function PendingPage({ section }: { section: WorkspaceSection }) {
   )
 }
 
-function renderSection(section: WorkspaceSection, transport: WorkspaceTransport) {
+function renderSection(
+  section: WorkspaceSection,
+  transport: WorkspaceTransport,
+  localAccess: LocalDeliverableAccess,
+  draftStore: TaskCreateDraftStore
+) {
   if (section.id === 'dashboard') {
     return <DashboardPage />
   }
 
   if (section.id === 'projects') {
-    return <ProjectsPage transport={transport} />
+    return <ProjectsPage localAccess={localAccess} transport={transport} />
+  }
+
+  if (section.id === 'todos') {
+    return <TasksPage draftStore={draftStore} transport={transport} />
   }
 
   return <PendingPage section={section} />
 }
 
-function routeContribution(section: WorkspaceSection, transport: WorkspaceTransport) {
+function routeContribution(
+  section: WorkspaceSection,
+  transport: WorkspaceTransport,
+  localAccess: LocalDeliverableAccess,
+  draftStore: TaskCreateDraftStore
+) {
   return {
     id: `route-${section.id}`,
     area: ROUTES_AREA,
     data: { path: section.path } satisfies RouteContribution,
-    render: () => renderSection(section, transport)
+    render: () => renderSection(section, transport, localAccess, draftStore)
   }
 }
 
@@ -156,6 +197,8 @@ const plugin: HermesPlugin = {
   defaultEnabled: true,
   register(ctx) {
     const workspaceReadTransport = createPluginWorkspaceReadTransport(ctx.rest)
+    const localAccess = createLocalDeliverableAccess(ctx.os.revealPath)
+    const draftStore = createTaskCreateDraftStore(ctx.storage)
 
     ctx.registerMany([
       {
@@ -173,7 +216,7 @@ const plugin: HermesPlugin = {
         },
         render: () => <WorkspaceNavPane />
       },
-      ...WORKSPACE_SECTIONS.map(section => routeContribution(section, workspaceReadTransport))
+      ...WORKSPACE_SECTIONS.map(section => routeContribution(section, workspaceReadTransport, localAccess, draftStore))
     ])
 
     if (typeof host.paneVisibility === 'function') {

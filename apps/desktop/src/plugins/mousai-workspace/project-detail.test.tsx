@@ -3,10 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { ProjectDetail } from './project-detail'
-import {
-  WorkspaceTaskMutationError,
-  type WorkspaceTaskMutationTransport
-} from './service-task-mutation'
+import { WorkspaceTaskMutationError, type WorkspaceTaskMutationTransport } from './service-task-mutation'
 import type { RawWorkspaceReadSnapshot, WorkspaceReadTransport } from './service-workspace-read'
 
 function snapshot(taskOverrides: Record<string, unknown> = {}): RawWorkspaceReadSnapshot {
@@ -62,9 +59,7 @@ function transport(read = vi.fn(async () => snapshot())): WorkspaceReadTransport
   return { scope: 'project-detail-test', readSnapshot: read }
 }
 
-function mutationTransport(
-  overrides: Partial<WorkspaceTaskMutationTransport> = {}
-): WorkspaceTaskMutationTransport {
+function mutationTransport(overrides: Partial<WorkspaceTaskMutationTransport> = {}): WorkspaceTaskMutationTransport {
   const result = (action: 'complete' | 'defer' | 'edit') => ({
     workId: 'WORK-001',
     action,
@@ -79,15 +74,12 @@ function mutationTransport(
     editTask: vi.fn(async () => result('edit')),
     deferTask: vi.fn(async () => result('defer')),
     completeTask: vi.fn(async () => result('complete')),
+    createTask: vi.fn(async () => ({ ...result('edit'), action: 'create' as const })),
     ...overrides
   }
 }
 
-function renderDetail(
-  source = transport(),
-  gatewayState = 'open',
-  mutations = mutationTransport()
-) {
+function renderDetail(source = transport(), gatewayState = 'open', mutations = mutationTransport()) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const onBack = vi.fn()
 
@@ -95,6 +87,7 @@ function renderDetail(
     <QueryClientProvider client={client}>
       <ProjectDetail
         gatewayState={gatewayState}
+        localAccess={{ revealOutbox: vi.fn(async () => true) }}
         mutationTransport={mutations}
         onBack={onBack}
         projectId="PROJECT-001"
@@ -164,6 +157,7 @@ describe('ProjectDetail', () => {
       <QueryClientProvider client={client}>
         <ProjectDetail
           gatewayState="open"
+          localAccess={{ revealOutbox: vi.fn(async () => true) }}
           mutationTransport={mutationTransport()}
           onBack={onBack}
           projectId="PROJECT-001"
@@ -191,7 +185,8 @@ describe('ProjectDetail', () => {
     let resolveEdit!: (value: Awaited<ReturnType<WorkspaceTaskMutationTransport['editTask']>>) => void
 
     const editTask = vi.fn(
-      () => new Promise<Awaited<ReturnType<WorkspaceTaskMutationTransport['editTask']>>>(resolve => (resolveEdit = resolve))
+      () =>
+        new Promise<Awaited<ReturnType<WorkspaceTaskMutationTransport['editTask']>>>(resolve => (resolveEdit = resolve))
     )
 
     const read = vi
@@ -308,10 +303,7 @@ describe('ProjectDetail', () => {
     expect(screen.getByText(/不会调用 WorkBridge worker-complete/)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: '确认完成' }))
     await waitFor(() => expect(completeTask).toHaveBeenCalledTimes(1))
-    expect(completeTask).toHaveBeenCalledWith(
-      'WORK-001',
-      expect.objectContaining({ expectedRevision: 'a'.repeat(64) })
-    )
+    expect(completeTask).toHaveBeenCalledWith('WORK-001', expect.objectContaining({ expectedRevision: 'a'.repeat(64) }))
   })
 
   it('disables all mutation actions for WorkBridge-active tasks', async () => {

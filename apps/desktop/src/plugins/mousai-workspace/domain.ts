@@ -67,15 +67,7 @@ export type TaskStatus =
 
 export type TaskPriority = 'high' | 'low' | 'normal' | 'urgent' | 'unset'
 export type WorkBridgeState =
-  | 'archived'
-  | 'claimed'
-  | 'completed'
-  | 'failed'
-  | 'not_applicable'
-  | 'processing'
-  | 'review'
-  | 'unknown'
-  | 'waiting'
+  'archived' | 'claimed' | 'completed' | 'failed' | 'not_applicable' | 'processing' | 'review' | 'unknown' | 'waiting'
 
 export interface Task {
   readonly id: string
@@ -123,6 +115,8 @@ export interface Deliverable {
   readonly sha256: string
   readonly modifiedAt: string
   readonly updatedAt: string
+  readonly submissionState: 'submitted'
+  readonly deliveryState: 'delivered' | 'pending'
   readonly reviewState: 'approved' | 'changes_requested' | 'pending' | 'rejected' | 'unknown'
   readonly localOutputRoot: string | null
   readonly source: SourceReference

@@ -1,6 +1,7 @@
 import type { PluginRestOptions } from '@hermes/plugin-sdk'
 
 import {
+  type TaskCreateInput,
   type TaskEditChanges,
   type TaskMutationMeta,
   type TaskMutationResult,
@@ -82,7 +83,7 @@ function parseMutationResult(value: unknown): TaskMutationResult {
   if (
     value.success !== true ||
     typeof value.workId !== 'string' ||
-    !['complete', 'defer', 'edit'].includes(String(action)) ||
+    !['complete', 'create', 'defer', 'edit'].includes(String(action)) ||
     typeof value.idempotent !== 'boolean' ||
     typeof value.newRevision !== 'string' ||
     !/^[0-9a-f]{64}$/.test(value.newRevision) ||
@@ -166,6 +167,9 @@ export function createPluginWorkspaceReadTransport(
     },
     editTask(workId: string, request: TaskMutationMeta & { readonly changes: TaskEditChanges }) {
       return mutate(`/tasks/${encodeURIComponent(workId)}`, 'PATCH', request)
+    },
+    createTask(request: { readonly clientRequestId: string; readonly task: TaskCreateInput }) {
+      return mutate('/tasks', 'POST', request)
     },
     deferTask(workId: string, request: TaskMutationMeta & { readonly deadline: string }) {
       return mutate(`/tasks/${encodeURIComponent(workId)}/defer`, 'POST', request)

@@ -18,6 +18,8 @@ export function adaptManifest(payload: unknown): AdapterResult<readonly Delivera
   const declaredFileCount = asNullableNumber(payload.file_count)
   const declaredTotalSize = asNullableNumber(payload.total_size_bytes)
   const localOutputRoot = asTrimmedText(payload.local_output_root)
+  const deliveredFiles = Array.isArray(payload.delivered_files) ? payload.delivered_files : []
+  const taskStatus = asTrimmedText(payload.task_status)
 
   if (!workId) {
     issues.push(issue('manifest', 'missing_id', 'Manifest has no work_id.'))
@@ -96,6 +98,14 @@ export function adaptManifest(payload: unknown): AdapterResult<readonly Delivera
     }
 
     seen.add(key)
+
+    const delivered = deliveredFiles.some(
+      item =>
+        isRecord(item) &&
+        asTrimmedText(item.relative_path) === relativePath &&
+        asTrimmedText(item.sha256)?.toLocaleLowerCase() === sha256.toLocaleLowerCase()
+    )
+
     deliverables.push({
       id: `${workId}:${sha256}:${relativePath}`,
       workId,
@@ -110,7 +120,9 @@ export function adaptManifest(payload: unknown): AdapterResult<readonly Delivera
       sha256,
       modifiedAt,
       updatedAt: modifiedAt,
-      reviewState: 'unknown',
+      submissionState: 'submitted',
+      deliveryState: delivered ? 'delivered' : 'pending',
+      reviewState: taskStatus === '待验收' ? 'pending' : taskStatus === '已完成' ? 'approved' : 'unknown',
       localOutputRoot,
       source: { system: 'manifest', recordId: relativePath }
     })

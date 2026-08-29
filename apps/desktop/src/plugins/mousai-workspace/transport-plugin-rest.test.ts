@@ -114,8 +114,8 @@ describe('secure Workspace plugin REST transport', () => {
     })
   })
 
-  it('uses ctx.rest for the three explicit task mutation routes', async () => {
-    const response = (action: 'complete' | 'defer' | 'edit') => ({
+  it('uses ctx.rest for the four explicit task mutation routes', async () => {
+    const response = (action: 'complete' | 'create' | 'defer' | 'edit') => ({
       workId: 'WORK-001',
       action,
       success: true,
@@ -125,9 +125,17 @@ describe('secure Workspace plugin REST transport', () => {
     })
 
     const rest = vi.fn(async (path: string) => {
-      if (path.endsWith('/defer')) {return response('defer')}
+      if (path === '/tasks') {
+        return response('create')
+      }
 
-      if (path.endsWith('/complete')) {return response('complete')}
+      if (path.endsWith('/defer')) {
+        return response('defer')
+      }
+
+      if (path.endsWith('/complete')) {
+        return response('complete')
+      }
 
       return response('edit')
     })
@@ -138,21 +146,27 @@ describe('secure Workspace plugin REST transport', () => {
 
     const meta = { clientRequestId: 'desktop:request-001', expectedRevision: 'b'.repeat(64) }
 
+    await transport.createTask({ clientRequestId: 'desktop:create-001', task: { title: '新任务' } })
     await transport.editTask('WORK-001', { ...meta, changes: { nextAction: '核对事实' } })
     await transport.deferTask('WORK-001', { ...meta, deadline: '2026-09-10' })
     await transport.completeTask('WORK-001', meta)
 
-    expect(rest).toHaveBeenNthCalledWith(1, '/tasks/WORK-001', {
+    expect(rest).toHaveBeenNthCalledWith(1, '/tasks', {
+      method: 'POST',
+      body: { clientRequestId: 'desktop:create-001', task: { title: '新任务' } },
+      timeoutMs: WORKSPACE_SNAPSHOT_TIMEOUT_MS
+    })
+    expect(rest).toHaveBeenNthCalledWith(2, '/tasks/WORK-001', {
       method: 'PATCH',
       body: { ...meta, changes: { nextAction: '核对事实' } },
       timeoutMs: WORKSPACE_SNAPSHOT_TIMEOUT_MS
     })
-    expect(rest).toHaveBeenNthCalledWith(2, '/tasks/WORK-001/defer', {
+    expect(rest).toHaveBeenNthCalledWith(3, '/tasks/WORK-001/defer', {
       method: 'POST',
       body: { ...meta, deadline: '2026-09-10' },
       timeoutMs: WORKSPACE_SNAPSHOT_TIMEOUT_MS
     })
-    expect(rest).toHaveBeenNthCalledWith(3, '/tasks/WORK-001/complete', {
+    expect(rest).toHaveBeenNthCalledWith(4, '/tasks/WORK-001/complete', {
       method: 'POST',
       body: meta,
       timeoutMs: WORKSPACE_SNAPSHOT_TIMEOUT_MS
@@ -160,10 +174,9 @@ describe('secure Workspace plugin REST transport', () => {
   })
 
   it('preserves a sanitized 409 revision conflict for the refetch UI', async () => {
-    const backend = Object.assign(
-      new Error('409: {"detail":{"code":"revision_conflict","message":"Task changed"}}'),
-      { statusCode: 409 }
-    )
+    const backend = Object.assign(new Error('409: {"detail":{"code":"revision_conflict","message":"Task changed"}}'), {
+      statusCode: 409
+    })
 
     const transport = createPluginWorkspaceReadTransport(vi.fn().mockRejectedValue(backend))
 

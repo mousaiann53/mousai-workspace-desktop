@@ -178,6 +178,8 @@ describe('WorkBridge and Manifest adapters', () => {
       file_count: 1,
       total_size_bytes: 12,
       local_output_root: 'H:\\MousaiWork\\outbox\\WORK-001',
+      task_status: '待验收',
+      delivered_files: [{ relative_path: 'deliverables/test.pdf', sha256: SHA }],
       files: [
         {
           filename: 'test.pdf',
@@ -198,7 +200,9 @@ describe('WorkBridge and Manifest adapters', () => {
       format: '.pdf',
       taskId: 'WORK-001',
       projectId: null,
-      reviewState: 'unknown',
+      submissionState: 'submitted',
+      deliveryState: 'delivered',
+      reviewState: 'pending',
       sizeBytes: 12,
       sha256: SHA
     })

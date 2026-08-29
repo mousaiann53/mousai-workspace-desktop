@@ -19,13 +19,10 @@ import {
 import { type ReactNode, useEffect, useMemo, useState } from 'react'
 
 import type { Deliverable, Project, Task } from './domain'
+import type { LocalDeliverableAccess } from './service-local-deliverables'
 import { projectDetailModel, type TimelineLayerModel } from './service-project-detail'
 import { taskActionCapability } from './service-task-actions'
-import {
-  isRevisionConflict,
-  type TaskEditChanges,
-  type WorkspaceTaskMutationTransport
-} from './service-task-mutation'
+import { isRevisionConflict, type TaskEditChanges, type WorkspaceTaskMutationTransport } from './service-task-mutation'
 import {
   readWorkspaceSnapshot,
   type WorkspaceReadTransport,
@@ -377,45 +374,90 @@ function TaskInspector({
                   </label>
                   <label className="block text-xs">
                     <span className="mb-1 block text-(--ui-text-tertiary)">类型</span>
-                    <Select disabled={pending} onValueChange={value => setType(value === 'unset' ? '' : value)} value={type || 'unset'}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
+                    <Select
+                      disabled={pending}
+                      onValueChange={value => setType(value === 'unset' ? '' : value)}
+                      value={type || 'unset'}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="unset">未设置</SelectItem>
-                        {['教学', '科研', '行政', '创意制作'].map(value => <SelectItem key={value} value={value}>{value}</SelectItem>)}
+                        {['教学', '科研', '行政', '创意制作'].map(value => (
+                          <SelectItem key={value} value={value}>
+                            {value}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </label>
                   <label className="block text-xs">
                     <span className="mb-1 block text-(--ui-text-tertiary)">所属项目</span>
-                    <Select disabled={pending} onValueChange={value => setProjectRef(value === 'unset' ? '' : value)} value={projectRef || 'unset'}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
+                    <Select
+                      disabled={pending}
+                      onValueChange={value => setProjectRef(value === 'unset' ? '' : value)}
+                      value={projectRef || 'unset'}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="unset">未设置</SelectItem>
-                        {projects.map(item => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}
+                        {projects.map(item => (
+                          <SelectItem key={item.id} value={item.id}>
+                            {item.name}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </label>
                   <label className="block text-xs">
                     <span className="mb-1 block text-(--ui-text-tertiary)">优先级</span>
-                    <Select disabled={pending} onValueChange={value => setPriority(value === 'unset' ? '' : value)} value={priority || 'unset'}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
+                    <Select
+                      disabled={pending}
+                      onValueChange={value => setPriority(value === 'unset' ? '' : value)}
+                      value={priority || 'unset'}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="unset">未设置</SelectItem>
-                        {['低', '普通', '高', '紧急'].map(value => <SelectItem key={value} value={value}>{value}</SelectItem>)}
+                        {['低', '普通', '高', '紧急'].map(value => (
+                          <SelectItem key={value} value={value}>
+                            {value}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </label>
                   <label className="block text-xs">
                     <span className="mb-1 block text-(--ui-text-tertiary)">DDL</span>
-                    <Input disabled={pending} onChange={event => setDeadline(event.target.value)} type="date" value={deadline} />
+                    <Input
+                      disabled={pending}
+                      onChange={event => setDeadline(event.target.value)}
+                      type="date"
+                      value={deadline}
+                    />
                   </label>
                   <label className="block text-xs">
                     <span className="mb-1 block text-(--ui-text-tertiary)">下一步行动</span>
-                    <Textarea disabled={pending} onChange={event => setNextAction(event.target.value)} value={nextAction} />
+                    <Textarea
+                      disabled={pending}
+                      onChange={event => setNextAction(event.target.value)}
+                      value={nextAction}
+                    />
                   </label>
                   <div className="flex justify-end gap-2">
-                    <Button disabled={pending} onClick={() => setMode('view')} size="sm" variant="ghost">取消</Button>
-                    <Button disabled={pending || !hasEditChanges || !title.trim()} onClick={() => void saveEdit()} size="sm">
+                    <Button disabled={pending} onClick={() => setMode('view')} size="sm" variant="ghost">
+                      取消
+                    </Button>
+                    <Button
+                      disabled={pending || !hasEditChanges || !title.trim()}
+                      onClick={() => void saveEdit()}
+                      size="sm"
+                    >
                       {pending ? '提交中' : '保存'}
                     </Button>
                   </div>
@@ -424,10 +466,17 @@ function TaskInspector({
                 <div className="space-y-4 pt-4">
                   <label className="block text-xs">
                     <span className="mb-1 block text-(--ui-text-tertiary)">明确的新 DDL</span>
-                    <Input disabled={pending} onChange={event => setDeferDate(event.target.value)} type="date" value={deferDate} />
+                    <Input
+                      disabled={pending}
+                      onChange={event => setDeferDate(event.target.value)}
+                      type="date"
+                      value={deferDate}
+                    />
                   </label>
                   <div className="flex justify-end gap-2">
-                    <Button disabled={pending} onClick={() => setMode('view')} size="sm" variant="ghost">取消</Button>
+                    <Button disabled={pending} onClick={() => setMode('view')} size="sm" variant="ghost">
+                      取消
+                    </Button>
                     <Button disabled={pending || !deferDate} onClick={() => void saveDefer()} size="sm">
                       {pending ? '提交中' : '确认延期'}
                     </Button>
@@ -458,16 +507,50 @@ function TaskInspector({
                     />
                   </div>
                   <div className="mt-5 flex flex-wrap gap-2 border-t border-(--ui-stroke-quaternary) pt-4">
-                    <Button disabled={pending || !capability?.canEdit} onClick={() => setMode('edit')} size="sm" variant="secondary">编辑</Button>
-                    <Button disabled={pending || !capability?.canDefer} onClick={() => setMode('defer')} size="sm" variant="secondary">延期</Button>
-                    <Button disabled={pending || !capability?.canComplete} onClick={() => setCompleteOpen(true)} size="sm">完成</Button>
+                    <Button
+                      disabled={pending || !capability?.canEdit}
+                      onClick={() => setMode('edit')}
+                      size="sm"
+                      variant="secondary"
+                    >
+                      编辑
+                    </Button>
+                    <Button
+                      disabled={pending || !capability?.canDefer}
+                      onClick={() => setMode('defer')}
+                      size="sm"
+                      variant="secondary"
+                    >
+                      延期
+                    </Button>
+                    <Button
+                      disabled={pending || !capability?.canComplete}
+                      onClick={() => setCompleteOpen(true)}
+                      size="sm"
+                    >
+                      完成
+                    </Button>
                   </div>
-                  {capability?.reason === 'active_execution' && <p className="mt-3 text-xs text-(--ui-text-tertiary)">任务正在由 WorkBridge 执行，Workspace 写操作已锁定。</p>}
-                  {capability?.reason === 'state_protected' && <p className="mt-3 text-xs text-(--ui-text-tertiary)">当前状态不允许编辑、延期或最终完成。</p>}
-                  {capability?.reason === 'missing_revision' && <p className="mt-3 text-xs text-(--ui-text-tertiary)">当前 snapshot 缺少 revision，写操作已关闭。</p>}
+                  {capability?.reason === 'active_execution' && (
+                    <p className="mt-3 text-xs text-(--ui-text-tertiary)">
+                      任务正在由 WorkBridge 执行，Workspace 写操作已锁定。
+                    </p>
+                  )}
+                  {capability?.reason === 'state_protected' && (
+                    <p className="mt-3 text-xs text-(--ui-text-tertiary)">当前状态不允许编辑、延期或最终完成。</p>
+                  )}
+                  {capability?.reason === 'missing_revision' && (
+                    <p className="mt-3 text-xs text-(--ui-text-tertiary)">
+                      当前 snapshot 缺少 revision，写操作已关闭。
+                    </p>
+                  )}
                 </>
               )}
-              {error && <p className="mt-4 text-xs text-destructive" role="alert">{error}</p>}
+              {error && (
+                <p className="mt-4 text-xs text-destructive" role="alert">
+                  {error}
+                </p>
+              )}
             </div>
             <ConfirmDialog
               confirmLabel="确认完成"
@@ -513,18 +596,21 @@ function ReadState({
 
 export function ProjectDetail({
   gatewayState,
+  localAccess,
   mutationTransport,
   onBack,
   projectId,
   transport
 }: {
   gatewayState: string
+  localAccess: LocalDeliverableAccess
   mutationTransport: WorkspaceTaskMutationTransport
   onBack: () => void
   projectId: string
   transport: WorkspaceReadTransport
 }) {
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
+  const [localAccessMessage, setLocalAccessMessage] = useState<string | null>(null)
 
   const result = useQuery({
     queryKey: ['mousai-workspace', 'project-gallery', transport.scope],
@@ -602,7 +688,10 @@ export function ProjectDetail({
           <Fact label="下一个 DDL" value={project.nextDeadline ? dateLabel(project.nextDeadline) : null} />
           <Fact label="下一步" value={project.nextAction} />
           <Fact label="风险" value={project.risk} />
-          <Fact label="个人 / 团队" value={project.ownership === 'unset' ? null : project.ownership === 'team' ? '团队' : '个人'} />
+          <Fact
+            label="个人 / 团队"
+            value={project.ownership === 'unset' ? null : project.ownership === 'team' ? '团队' : '个人'}
+          />
           <Fact label="标签" value={project.tags.length ? project.tags.join('、') : null} />
         </dl>
       </header>
@@ -628,12 +717,15 @@ export function ProjectDetail({
                     <div className="text-xs text-(--ui-text-tertiary)">
                       <div>{task.statusLabel ?? TASK_STATUS_LABELS[task.status]}</div>
                       <div className="mt-1 text-[0.6875rem] text-(--ui-text-quaternary)">
-                        {task.priorityLabel ?? PRIORITY_LABELS[task.priority]} · {WORKBRIDGE_LABELS[task.workBridgeState]}
+                        {task.priorityLabel ?? PRIORITY_LABELS[task.priority]} ·{' '}
+                        {WORKBRIDGE_LABELS[task.workBridgeState]}
                       </div>
                     </div>
                     <div className="text-xs text-(--ui-text-quaternary)">
                       <div>{task.deadline ? dateLabel(task.deadline) : 'DDL 未设置'}</div>
-                      <div className="mt-1">估时 {display(task.estimate)} · 执行者 {display(task.executor)}</div>
+                      <div className="mt-1">
+                        估时 {display(task.estimate)} · 执行者 {display(task.executor)}
+                      </div>
                     </div>
                     <div className="sm:col-span-3">
                       <div className="text-[0.6875rem] text-(--ui-text-quaternary)">下一步</div>
@@ -653,12 +745,43 @@ export function ProjectDetail({
             ) : (
               <ul className="space-y-2">
                 {model.deliverables.map(item => (
-                  <li className="rounded-md bg-foreground/4 px-3 py-2 text-xs" key={item.id}>
-                    {item.filename} · {item.sizeBytes} bytes
+                  <li
+                    className="flex items-center justify-between gap-3 rounded-md bg-foreground/4 px-3 py-2 text-xs"
+                    key={item.id}
+                  >
+                    <div className="min-w-0">
+                      <div className="truncate">
+                        {item.filename} · {item.sizeBytes} bytes
+                      </div>
+                      <div className="mt-1 text-[0.6875rem] text-(--ui-text-quaternary)">
+                        已提交 · {item.deliveryState === 'delivered' ? '已交付' : '待交付'} ·{' '}
+                        {item.reviewState === 'pending'
+                          ? '待人工验收'
+                          : item.reviewState === 'approved'
+                            ? '已验收'
+                            : '验收状态未设置'}
+                      </div>
+                    </div>
+                    <Button
+                      onClick={() => {
+                        setLocalAccessMessage(null)
+                        void localAccess.revealOutbox(item.workId).then(opened => {
+                          if (!opened) {
+                            setLocalAccessMessage('本机产物目录不可用；未尝试其他路径。')
+                          }
+                        })
+                      }}
+                      size="sm"
+                      type="button"
+                      variant="outline"
+                    >
+                      打开产物目录
+                    </Button>
                   </li>
                 ))}
               </ul>
             )}
+            {localAccessMessage && <p className="mt-2 text-xs text-destructive">{localAccessMessage}</p>}
           </Section>
 
           <Section title="最近活动">

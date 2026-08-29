@@ -13,7 +13,7 @@ export interface TaskEditChanges {
 }
 
 export interface TaskMutationResult {
-  readonly action: 'complete' | 'defer' | 'edit'
+  readonly action: 'complete' | 'create' | 'defer' | 'edit'
   readonly changed: Readonly<Record<string, unknown>>
   readonly idempotent: boolean
   readonly newRevision: string
@@ -21,11 +21,24 @@ export interface TaskMutationResult {
   readonly workId: string
 }
 
+export interface TaskCreateInput {
+  readonly deadline?: null | string
+  readonly nextAction?: null | string
+  readonly priority?: null | string
+  readonly projectRef?: null | string
+  readonly title: string
+  readonly type?: null | string
+}
+
 export interface WorkspaceTaskMutationTransport {
   readonly scope: string
   completeTask(workId: string, meta: TaskMutationMeta): Promise<TaskMutationResult>
+  createTask(request: { readonly clientRequestId: string; readonly task: TaskCreateInput }): Promise<TaskMutationResult>
   deferTask(workId: string, request: TaskMutationMeta & { readonly deadline: string }): Promise<TaskMutationResult>
-  editTask(workId: string, request: TaskMutationMeta & { readonly changes: TaskEditChanges }): Promise<TaskMutationResult>
+  editTask(
+    workId: string,
+    request: TaskMutationMeta & { readonly changes: TaskEditChanges }
+  ): Promise<TaskMutationResult>
 }
 
 export class WorkspaceTaskMutationError extends Error {
