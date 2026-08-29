@@ -37,9 +37,9 @@ describe('Production action-state matrix', () => {
     ['MATERIAL_MISSING', ['prepare']],
     ['DECISION_REQUIRED', ['prepare']],
     ['WAITING_HUMAN_APPROVAL', ['prepare', 'scope']],
-    ['APPROVED_SCOPE', ['scope', 'start']],
+    ['APPROVED_SCOPE', ['start']],
     ['READY_FOR_PRODUCTION', []],
-    ['REVISION_REQUIRED', ['scope', 'start']],
+    ['REVISION_REQUIRED', []],
     ['DELIVERED', []],
     ['WAITING_ACCEPTANCE', ['accept', 'revision']],
     ['ACCEPTED', []]

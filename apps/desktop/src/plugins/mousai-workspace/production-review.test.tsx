@@ -359,6 +359,50 @@ describe('Production Review presentation', () => {
     expect((screen.getByRole('button', { name: '最终通过' }) as HTMLButtonElement).disabled).toBe(false)
   })
 
+  it.each<[ProductionGateState, string]>([
+    ['MATERIAL_MISSING', '资料缺失阻塞生产'],
+    ['DECISION_REQUIRED', '等待 Mousai 明确决策'],
+    ['READY_FOR_PRODUCTION', '生产已启动或正在等待执行'],
+    ['REVISION_REQUIRED', '当前 canonical read model 未开放新的 Desktop 推进动作'],
+    ['ACCEPTED', '已最终验收，记录为只读']
+  ])('explains the canonical %s boundary instead of exposing an illegal action', (gateState, guidance) => {
+    const [item] = buildProductionReviewItems(project, [task], [deliverable], [review({ gateState })])
+
+    render(card(item))
+
+    expect(screen.getByRole('status').textContent).toContain(guidance)
+  })
+
+  it('suppresses duplicate production submissions while the canonical mutation is pending', async () => {
+    let finishStart!: (value: Awaited<ReturnType<WorkspaceProductionActionTransport['startProduction']>>) => void
+    const approved = review({ gateState: 'APPROVED_SCOPE', manifestVersion: null })
+
+    const transport = {
+      ...actionTransport,
+      startProduction: vi.fn(
+        () =>
+          new Promise<Awaited<ReturnType<WorkspaceProductionActionTransport['startProduction']>>>(resolve => {
+            finishStart = resolve
+          })
+      )
+    }
+
+    const [item] = buildProductionReviewItems(project, [task], [], [approved])
+
+    render(<ProductionReviewCard item={item} onOpenLocal={vi.fn()} onRefresh={vi.fn()} transport={transport} />)
+
+    fireEvent.click(screen.getByRole('button', { name: '开始生产' }))
+    const confirm = screen.getByRole('button', { name: '确认开始生产' })
+    fireEvent.click(confirm)
+    fireEvent.click(confirm)
+
+    expect(transport.startProduction).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      finishStart({ action: 'start', production: review({ gateState: 'READY_FOR_PRODUCTION' }) })
+    })
+  })
+
   it.each<ProductionGateState>([
     'INPUT_REQUIRED',
     'MATERIAL_MISSING',

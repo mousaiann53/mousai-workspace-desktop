@@ -67,8 +67,8 @@ export function productionActionCapability(review: ProductionReview | null): Pro
 
   return {
     prepare: gate === null || PREPARE_GATES.has(gate),
-    scope: gate === 'WAITING_HUMAN_APPROVAL' || gate === 'APPROVED_SCOPE' || gate === 'REVISION_REQUIRED',
-    start: gate === 'APPROVED_SCOPE' || gate === 'REVISION_REQUIRED',
+    scope: gate === 'WAITING_HUMAN_APPROVAL',
+    start: gate === 'APPROVED_SCOPE',
     revision: gate === 'WAITING_ACCEPTANCE',
     accept: gate === 'WAITING_ACCEPTANCE'
   }

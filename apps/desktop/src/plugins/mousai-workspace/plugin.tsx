@@ -48,7 +48,10 @@ function WorkspaceNavPane() {
         </div>
       </div>
 
-      <nav aria-label="Workspace" className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto p-2">
+      <nav
+        aria-label="Workspace"
+        className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto p-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      >
         {WORKSPACE_SECTIONS.map(section => (
           <button
             className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-[0.8125rem] text-(--ui-text-secondary) transition-colors hover:bg-(--ui-hover-overlay) hover:text-foreground"
@@ -67,7 +70,7 @@ function WorkspaceNavPane() {
 
 function WorkspacePage({ title, eyebrow, children }: { title: string; eyebrow?: string; children: ReactNode }) {
   return (
-    <main className="h-full min-h-0 overflow-y-auto bg-(--ui-editor-surface-background) px-6 pb-10 pt-14 text-foreground">
+    <main className="h-full min-h-0 overflow-y-auto bg-(--ui-editor-surface-background) px-6 pb-10 pt-14 text-foreground [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       <div className="mx-auto w-full max-w-6xl">
         {eyebrow && (
           <div className="mb-2 text-[0.6875rem] font-medium tracking-[0.16em] text-(--ui-text-quaternary)">

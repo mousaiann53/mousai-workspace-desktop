@@ -347,7 +347,7 @@ function TaskInspector({
               <SheetTitle>{task.title}</SheetTitle>
               <SheetDescription>{task.id} · 受控任务事实</SheetDescription>
             </SheetHeader>
-            <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-6">
+            <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-6 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {tasks.length > 1 && (
                 <div className="border-b border-(--ui-stroke-quaternary) py-3">
                   <div className="mb-2 text-[0.6875rem] text-(--ui-text-quaternary)">同项目任务</div>

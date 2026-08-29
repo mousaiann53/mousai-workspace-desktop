@@ -11,7 +11,7 @@ import {
 } from '@hermes/plugin-sdk'
 import { useEffect, useMemo, useState } from 'react'
 
-import type { ProductionBundleMeta, ProductionJsonValue } from './domain'
+import type { ProductionBundleMeta, ProductionGateState, ProductionJsonValue } from './domain'
 import {
   issueProductionScope,
   type ProductionAction,
@@ -37,6 +37,28 @@ const ACTION_IMPACTS: Readonly<Record<ProductionAction, string>> = {
   accept: '保存本次人工验收 metadata，并把当前交付推进到最终通过。'
 }
 
+const GATE_GUIDANCE: Readonly<Record<ProductionGateState, string>> = {
+  INPUT_REQUIRED: '需要先补齐受控生产输入；当前仅可提交更新后的前置 metadata。',
+  MATERIAL_MISSING: '资料缺失阻塞生产；当前仅可补充缺失资料并重新提交，不能批准范围或启动生产。',
+  DECISION_REQUIRED: '等待 Mousai 明确决策；当前仅可提交澄清后的前置 metadata，不能推进生产。',
+  WAITING_HUMAN_APPROVAL: '等待 Mousai 审批完整 Scope；批准范围不会自动开始生产。',
+  APPROVED_SCOPE: 'Scope 已由人工批准；如确认进入生产，需要单独执行“开始生产”。',
+  READY_FOR_PRODUCTION: '生产已启动或正在等待执行；此处不重复审批或启动。',
+  REVISION_REQUIRED: '已要求修订；当前 canonical read model 未开放新的 Desktop 推进动作。',
+  DELIVERED: '交付已登记；等待 canonical gate 进入人工验收。',
+  WAITING_ACCEPTANCE: '等待 Mousai 人工验收；可要求修订或最终通过。',
+  ACCEPTED: '已最终验收，记录为只读。'
+}
+
+const ERROR_GUIDANCE: Readonly<Record<number, string>> = {
+  400: '请求内容无效，请检查必填项。',
+  401: '当前 Desktop 会话未通过认证，请重新连接 Gateway。',
+  404: '权威生产记录不存在，请刷新 Workspace。',
+  409: 'Gate 已变化或动作不再合法，请刷新后按最新状态重试。',
+  502: 'Gateway 暂时无法连接 WorkBridge。',
+  503: '生产服务暂时不可用，请稍后重试。'
+}
+
 function lines(value: string): readonly string[] {
   return value
     .split(/\r?\n/)
@@ -52,11 +74,12 @@ function dateInput(value: string | null): string {
   return value?.match(/^\d{4}-\d{2}-\d{2}/)?.[0] ?? ''
 }
 
-function actionErrorMessage(error: unknown): string {
+export function productionActionErrorMessage(error: unknown): string {
   if (error instanceof ProductionActionError) {
     const status = error.statusCode === null ? '' : `${error.statusCode} `
+    const guidance = error.statusCode === null ? '' : ERROR_GUIDANCE[error.statusCode]
 
-    return `${status}${error.code}: ${error.message}`
+    return [guidance, `${status}${error.code}: ${error.message}`].filter(Boolean).join(' ')
   }
 
   return error instanceof Error ? error.message : 'Production action failed.'
@@ -230,7 +253,7 @@ export function ProductionActionPanel({
       try {
         await onRefresh()
       } catch (refreshError) {
-        setError(`服务端动作已完成，但 snapshot 刷新失败：${actionErrorMessage(refreshError)}`)
+        setError(`服务端动作已完成，但 snapshot 刷新失败：${productionActionErrorMessage(refreshError)}`)
 
         return
       }
@@ -238,7 +261,7 @@ export function ProductionActionPanel({
       setSuccess(`服务端已返回 ${result.production.gateState}；snapshot 已刷新。`)
       setAction(null)
     } catch (actionError) {
-      setError(actionErrorMessage(actionError))
+      setError(productionActionErrorMessage(actionError))
     } finally {
       setPending(false)
     }
@@ -247,6 +270,9 @@ export function ProductionActionPanel({
   return (
     <div className="mt-4 border-t border-(--ui-stroke-quaternary) pt-3">
       <div className="mb-2 text-[0.6875rem] text-(--ui-text-quaternary)">Production Actions（显式操作）</div>
+      <p className="mb-3 break-words text-xs text-(--ui-text-secondary)" role="status">
+        {review ? GATE_GUIDANCE[review.gateState] : '尚无 production record；可提交前置 metadata，不会伪造生产状态。'}
+      </p>
       <div className="flex flex-wrap gap-2">
         {(Object.keys(ACTION_LABELS) as ProductionAction[]).map(candidate => {
           const enabled = capability[candidate] && (candidate !== 'scope' || Boolean(review?.bundleMeta))
@@ -265,11 +291,19 @@ export function ProductionActionPanel({
           )
         })}
       </div>
-      {success && <p className="mt-2 text-xs text-(--ui-text-secondary)">{success}</p>}
-      {error && <p className="mt-2 break-words text-xs text-destructive">{error}</p>}
+      {success && (
+        <p className="mt-2 text-xs text-(--ui-text-secondary)" role="status">
+          {success}
+        </p>
+      )}
+      {error && (
+        <p className="mt-2 break-words text-xs text-destructive" role="alert">
+          {error}
+        </p>
+      )}
 
       <Dialog onOpenChange={open => !open && !pending && setAction(null)} open={action !== null}>
-        <DialogContent className="max-h-[85vh] max-w-xl overflow-y-auto">
+        <DialogContent className="max-h-[85vh] max-w-xl overflow-y-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <DialogHeader>
             <DialogTitle>{action ? ACTION_LABELS[action] : 'Production Action'}</DialogTitle>
             <DialogDescription>
