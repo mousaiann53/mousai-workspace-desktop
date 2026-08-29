@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router'
 
 import { ProjectDetail } from './project-detail'
 import { ProjectGallery } from './project-gallery'
+import type { WorkspaceTaskMutationTransport } from './service-task-mutation'
 import type { WorkspaceReadTransport } from './service-workspace-read'
 import { createPluginWorkspaceReadTransport } from './transport-plugin-rest'
 
@@ -91,7 +92,9 @@ function DashboardPage() {
   )
 }
 
-function ProjectsPage({ transport }: { transport: WorkspaceReadTransport }) {
+type WorkspaceTransport = WorkspaceReadTransport & WorkspaceTaskMutationTransport
+
+function ProjectsPage({ transport }: { transport: WorkspaceTransport }) {
   const gatewayState = useValue(host.state.gateway)
   const [searchParams] = useSearchParams()
   const projectId = searchParams.get('project')
@@ -101,6 +104,7 @@ function ProjectsPage({ transport }: { transport: WorkspaceReadTransport }) {
       {projectId ? (
         <ProjectDetail
           gatewayState={gatewayState}
+          mutationTransport={transport}
           onBack={() => navigateWorkspace('/workspace/projects')}
           projectId={projectId}
           transport={transport}
@@ -124,7 +128,7 @@ function PendingPage({ section }: { section: WorkspaceSection }) {
   )
 }
 
-function renderSection(section: WorkspaceSection, transport: WorkspaceReadTransport) {
+function renderSection(section: WorkspaceSection, transport: WorkspaceTransport) {
   if (section.id === 'dashboard') {
     return <DashboardPage />
   }
@@ -136,7 +140,7 @@ function renderSection(section: WorkspaceSection, transport: WorkspaceReadTransp
   return <PendingPage section={section} />
 }
 
-function routeContribution(section: WorkspaceSection, transport: WorkspaceReadTransport) {
+function routeContribution(section: WorkspaceSection, transport: WorkspaceTransport) {
   return {
     id: `route-${section.id}`,
     area: ROUTES_AREA,
