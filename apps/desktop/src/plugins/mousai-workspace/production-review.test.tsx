@@ -219,6 +219,12 @@ describe('Production Review presentation', () => {
     const baseline = review()
 
     const workBuddyReview = review({
+      bundleMeta: baseline.bundleMeta
+        ? {
+            ...baseline.bundleMeta,
+            outputRequirements: { ...baseline.bundleMeta.outputRequirements, task_type: 'teaching_plan' }
+          }
+        : null,
       events: [
         ...baseline.events,
         {
@@ -240,6 +246,13 @@ describe('Production Review presentation', () => {
 
     expect(item.producer).toBe('workbuddy')
     expect(item.provenance).toBe('Mousai Workspace / WorkBuddy')
+
+    render(card(item))
+    expect(screen.getByText('Skill candidate evidence')).toBeTruthy()
+    expect(screen.getByText('course-production')).toBeTruthy()
+    expect(screen.getByText('teaching_plan')).toBeTruthy()
+    expect(screen.getAllByText('candidate').length).toBeGreaterThanOrEqual(2)
+    expect(screen.queryByText(/WorkBuddy run = NOT RUN/)).toBeNull()
   })
 
   it('keeps provenance unset when a title looks like M5 but canonical evidence names no producer', () => {
@@ -276,6 +289,9 @@ describe('Production Review presentation', () => {
 
     expect(item.producer).toBe('GPT-PM')
     expect(item.provenance).toBe('external / GPT-PM + Mousai')
+
+    render(card(item))
+    expect(screen.getByText(/WorkBuddy run = NOT RUN/)).toBeTruthy()
   })
 
   it('keeps absent ProductionReadModel fields visibly unset and never invents a record', () => {
@@ -312,7 +328,7 @@ describe('Production Review presentation', () => {
     expect(screen.getByRole('dialog')).toBeTruthy()
     expect(screen.getByText(/批准下方完整 Scope items/)).toBeTruthy()
     expect(screen.getAllByText(task.id).length).toBeGreaterThanOrEqual(2)
-    expect(screen.getByText('WAITING_HUMAN_APPROVAL')).toBeTruthy()
+    expect(screen.getAllByText('WAITING_HUMAN_APPROVAL').length).toBeGreaterThanOrEqual(2)
     expect(screen.getAllByText('未设置 / 等待输入').length).toBeGreaterThanOrEqual(3)
     fireEvent.change(screen.getByLabelText('本次 Scope items（每行一项）'), {
       target: { value: 'M5 已批准结构\nM5 已批准交付格式' }
@@ -422,7 +438,7 @@ describe('Production Review presentation', () => {
     render(card(item))
 
     expect(screen.getByText('已验收（ACCEPTED）')).toBeTruthy()
-    expect(screen.getByText('通过')).toBeTruthy()
+    expect(screen.getAllByText('通过').length).toBeGreaterThanOrEqual(2)
     expect(screen.getByText('manifest-v3')).toBeTruthy()
   })
 

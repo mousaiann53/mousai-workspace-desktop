@@ -6,6 +6,8 @@ import { ProductionActionPanel } from './production-actions'
 import { ProductionHistory } from './production-history'
 import type { WorkspaceProductionActionTransport } from './service-production-actions'
 import type { ProductionReviewItem } from './service-production-review'
+import { buildSkillEvidence } from './service-skill-evidence'
+import { SkillEvidence } from './skill-evidence'
 
 const GATE_LABELS: Readonly<Record<ProductionGateState, string>> = {
   INPUT_REQUIRED: '需要输入（INPUT_REQUIRED）',
@@ -143,6 +145,7 @@ export function ProductionReviewCard({
   const gate = review ? GATE_LABELS[review.gateState] : '未设置 / 等待输入'
   const scopeVersion = review?.approvedScope ? `v${review.approvedScope.version}` : '未设置 / 等待输入'
   const finalVersion = review?.gateState === 'ACCEPTED' ? review.manifestVersion : null
+  const skillEvidence = buildSkillEvidence(item)
 
   return (
     <article className="rounded-lg border border-(--ui-stroke-quaternary) p-4">
@@ -195,7 +198,7 @@ export function ProductionReviewCard({
           {review?.revision === null || !review ? '未设置 / 等待输入' : `r${review.revision}`}
         </ReviewFact>
         <ReviewFact label="最终版本">{value(finalVersion)}</ReviewFact>
-        <ReviewFact label="Skill candidate 状态">未设置 / 等待输入</ReviewFact>
+        <ReviewFact label="Skill candidate 状态">{value(skillEvidence.candidateState)}</ReviewFact>
         <ReviewFact label="验收结果">{value(review?.acceptance?.verdict ?? null)}</ReviewFact>
         <ReviewFact label="Submission 状态">
           {fileState(deliverables, deliverable => deliverable.submissionState)}
@@ -226,6 +229,11 @@ export function ProductionReviewCard({
         ) : (
           <p className="text-xs text-(--ui-text-tertiary)">Manifest 未设置 / 等待输入。</p>
         )}
+      </div>
+
+      <div className="mt-4 border-t border-(--ui-stroke-quaternary) pt-3">
+        <div className="mb-2 text-[0.6875rem] text-(--ui-text-quaternary)">Skill candidate evidence</div>
+        <SkillEvidence item={item} />
       </div>
 
       <div className="mt-4 border-t border-(--ui-stroke-quaternary) pt-3">
