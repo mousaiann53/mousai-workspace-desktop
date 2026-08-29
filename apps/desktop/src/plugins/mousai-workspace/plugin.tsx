@@ -1,6 +1,8 @@
 import { Codicon, type HermesPlugin, host, type RouteContribution, ROUTES_AREA, useValue } from '@hermes/plugin-sdk'
 import { type ReactNode } from 'react'
+import { useSearchParams } from 'react-router'
 
+import { ProjectDetail } from './project-detail'
 import { ProjectGallery } from './project-gallery'
 import type { WorkspaceReadTransport } from './service-workspace-read'
 import { createPluginWorkspaceReadTransport } from './transport-plugin-rest'
@@ -91,10 +93,25 @@ function DashboardPage() {
 
 function ProjectsPage({ transport }: { transport: WorkspaceReadTransport }) {
   const gatewayState = useValue(host.state.gateway)
+  const [searchParams] = useSearchParams()
+  const projectId = searchParams.get('project')
 
   return (
-    <WorkspacePage eyebrow="WORKSPACE" title="项目">
-      <ProjectGallery gatewayState={gatewayState} transport={transport} />
+    <WorkspacePage eyebrow="WORKSPACE" title={projectId ? '项目详情' : '项目'}>
+      {projectId ? (
+        <ProjectDetail
+          gatewayState={gatewayState}
+          onBack={() => navigateWorkspace('/workspace/projects')}
+          projectId={projectId}
+          transport={transport}
+        />
+      ) : (
+        <ProjectGallery
+          gatewayState={gatewayState}
+          onOpenProject={id => navigateWorkspace(`/workspace/projects?project=${encodeURIComponent(id)}`)}
+          transport={transport}
+        />
+      )}
     </WorkspacePage>
   )
 }

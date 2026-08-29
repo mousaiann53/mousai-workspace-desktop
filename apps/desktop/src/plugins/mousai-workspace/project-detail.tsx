@@ -1,0 +1,447 @@
+import {
+  Codicon,
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  useQuery
+} from '@hermes/plugin-sdk'
+import { type ReactNode, useMemo, useState } from 'react'
+
+import type { Deliverable, Project, Task } from './domain'
+import { projectDetailModel, type TimelineLayerModel } from './service-project-detail'
+import {
+  readWorkspaceSnapshot,
+  type WorkspaceReadTransport,
+  WorkspaceTransportUnavailableError
+} from './service-workspace-read'
+
+const TASK_STATUS_LABELS: Readonly<Record<Task['status'], string>> = {
+  archived: '已归档',
+  classified: '已分类',
+  claimed: '已领取',
+  cloud_processing: '云端处理中',
+  completed: '已完成',
+  decision_required: '需要决策',
+  execution_failed: '执行失败',
+  inbox: '收件箱',
+  local_processing: '本机处理中',
+  material_missing: '资料缺失',
+  model_failed: '模型失败',
+  review: '待验收',
+  waiting_local: '等待本机',
+  unknown: '未设置'
+}
+
+const PRIORITY_LABELS: Readonly<Record<Task['priority'], string>> = {
+  high: '高',
+  low: '低',
+  normal: '普通',
+  urgent: '紧急',
+  unset: '未设置'
+}
+
+const WORKBRIDGE_LABELS: Readonly<Record<Task['workBridgeState'], string>> = {
+  archived: '已归档',
+  claimed: '已领取',
+  completed: '已完成',
+  failed: '失败',
+  not_applicable: '不适用',
+  processing: '处理中',
+  review: '待验收',
+  unknown: '未知',
+  waiting: '等待本机'
+}
+
+const TIMELINE_LABELS: Readonly<Record<TimelineLayerModel['key'], string>> = {
+  stage: '阶段',
+  milestone: '里程碑',
+  deadline: 'DDL',
+  event: '重要事件'
+}
+
+function display(value: boolean | null | number | string): string {
+  if (value === null || value === '') {
+    return '未设置'
+  }
+
+  if (typeof value === 'boolean') {
+    return value ? '是' : '否'
+  }
+
+  return String(value)
+}
+
+function dateLabel(value: string | null): string {
+  if (!value) {
+    return '未设置'
+  }
+
+  return new Intl.DateTimeFormat('zh-CN', {
+    dateStyle: 'medium',
+    timeStyle: 'short'
+  }).format(new Date(value))
+}
+
+function Fact({ label, value }: { label: string; value: boolean | null | number | string }) {
+  return (
+    <div>
+      <dt className="text-[0.6875rem] text-(--ui-text-quaternary)">{label}</dt>
+      <dd className="mt-1 break-words text-xs text-(--ui-text-secondary)">{display(value)}</dd>
+    </div>
+  )
+}
+
+function EmptyReadState({ copy }: { copy: string }) {
+  return (
+    <div className="rounded-md bg-foreground/4 px-3 py-4 text-center text-xs leading-5 text-(--ui-text-tertiary)">
+      {copy}
+    </div>
+  )
+}
+
+function Section({ children, title }: { children: ReactNode; title: string }) {
+  return (
+    <section>
+      <h2 className="mb-3 text-sm font-medium">{title}</h2>
+      {children}
+    </section>
+  )
+}
+
+function TimelineLayer({ layer }: { layer: TimelineLayerModel }) {
+  return (
+    <div className="rounded-lg border border-(--ui-stroke-quaternary) p-3">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <h3 className="text-xs font-medium">{TIMELINE_LABELS[layer.key]}</h3>
+        <span className="text-[0.6875rem] text-(--ui-text-quaternary)">{layer.items.length}</span>
+      </div>
+      {layer.items.length === 0 ? (
+        <p className="text-xs text-(--ui-text-tertiary)">暂无正式数据</p>
+      ) : (
+        <ol className="space-y-2">
+          {layer.items.map(item => (
+            <li className="flex items-start gap-2 text-xs" key={item.id}>
+              <span
+                aria-hidden="true"
+                className={`mt-1.5 size-1.5 shrink-0 rounded-full ${
+                  item.timing === 'overdue' ? 'bg-destructive' : 'bg-primary'
+                }`}
+              />
+              <div className="min-w-0">
+                <div className="break-words text-(--ui-text-secondary)">{item.title}</div>
+                {item.occurredAt && (
+                  <div className="mt-0.5 text-[0.6875rem] text-(--ui-text-quaternary)">
+                    {dateLabel(item.occurredAt)}
+                  </div>
+                )}
+              </div>
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  )
+}
+
+function TaskInspector({
+  deliverables,
+  onClose,
+  onSelectTask,
+  open,
+  project,
+  task,
+  tasks
+}: {
+  deliverables: readonly Deliverable[]
+  onClose: () => void
+  onSelectTask: (taskId: string) => void
+  open: boolean
+  project: Project
+  task: Task | null
+  tasks: readonly Task[]
+}) {
+  const taskDeliverables = task ? deliverables.filter(item => item.taskId === task.id) : []
+
+  return (
+    <Sheet onOpenChange={next => !next && onClose()} open={open}>
+      <SheetContent aria-label="任务详情" className="sm:max-w-md" side="right">
+        {task && (
+          <>
+            <SheetHeader className="border-b border-(--ui-stroke-quaternary) pr-10">
+              <SheetTitle>{task.title}</SheetTitle>
+              <SheetDescription>{task.id} · 只读详情</SheetDescription>
+            </SheetHeader>
+            <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-6">
+              {tasks.length > 1 && (
+                <div className="border-b border-(--ui-stroke-quaternary) py-3">
+                  <div className="mb-2 text-[0.6875rem] text-(--ui-text-quaternary)">同项目任务</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {tasks.map(candidate => (
+                      <button
+                        aria-pressed={candidate.id === task.id}
+                        className={`rounded-md px-2 py-1 text-[0.6875rem] ${
+                          candidate.id === task.id
+                            ? 'bg-(--ui-control-active-background) text-foreground'
+                            : 'bg-foreground/5 text-(--ui-text-tertiary) hover:text-foreground'
+                        }`}
+                        key={candidate.id}
+                        onClick={() => onSelectTask(candidate.id)}
+                        type="button"
+                      >
+                        {candidate.id}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-4 pt-3">
+                <Fact label="项目" value={project.name} />
+                <Fact label="类型" value={task.typeLabel} />
+                <Fact label="状态" value={task.statusLabel ?? TASK_STATUS_LABELS[task.status]} />
+                <Fact label="优先级" value={task.priorityLabel ?? PRIORITY_LABELS[task.priority]} />
+                <Fact label="DDL" value={task.deadline ? dateLabel(task.deadline) : null} />
+                <Fact label="估时" value={task.estimate} />
+                <Fact label="执行者" value={task.executor} />
+                <Fact label="WorkBridge 状态" value={WORKBRIDGE_LABELS[task.workBridgeState]} />
+                <Fact label="需要人工确认" value={task.requiresHumanApproval} />
+                <Fact label="来源" value={task.origin} />
+                <Fact label="创建时间" value={task.createdAt ? dateLabel(task.createdAt) : null} />
+                <Fact label="更新时间" value={task.updatedAt ? dateLabel(task.updatedAt) : null} />
+              </dl>
+              <div className="mt-5 space-y-4 border-t border-(--ui-stroke-quaternary) pt-4">
+                <Fact label="下一步行动" value={task.nextAction} />
+                <Fact label="Artifact URL" value={task.artifactUrl} />
+                <Fact
+                  label="Deliverable relation"
+                  value={taskDeliverables.length ? taskDeliverables.map(item => item.filename).join('、') : null}
+                />
+              </div>
+            </div>
+          </>
+        )}
+      </SheetContent>
+    </Sheet>
+  )
+}
+
+function ReadState({
+  action,
+  copy,
+  title
+}: {
+  action?: { label: string; onClick: () => void }
+  copy: string
+  title: string
+}) {
+  return (
+    <section className="rounded-lg border border-(--ui-stroke-quaternary) p-6 text-center">
+      <Codicon className="mx-auto text-(--ui-text-quaternary)" name="warning" size="1.1rem" />
+      <h2 className="mt-3 text-sm font-medium">{title}</h2>
+      <p className="mt-2 text-xs text-(--ui-text-tertiary)">{copy}</p>
+      {action && (
+        <button
+          className="mt-4 rounded-md border border-(--ui-stroke-tertiary) px-3 py-1.5 text-xs hover:bg-(--ui-hover-overlay)"
+          onClick={action.onClick}
+          type="button"
+        >
+          {action.label}
+        </button>
+      )}
+    </section>
+  )
+}
+
+export function ProjectDetail({
+  gatewayState,
+  onBack,
+  projectId,
+  transport
+}: {
+  gatewayState: string
+  onBack: () => void
+  projectId: string
+  transport: WorkspaceReadTransport
+}) {
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
+
+  const result = useQuery({
+    queryKey: ['mousai-workspace', 'project-gallery', transport.scope],
+    queryFn: ({ signal }) => readWorkspaceSnapshot(transport, { signal }),
+    enabled: gatewayState === 'open',
+    refetchOnMount: 'always',
+    retry: false,
+    staleTime: 0
+  })
+
+  const model = useMemo(
+    () => (result.data ? projectDetailModel(result.data.snapshot, projectId) : null),
+    [projectId, result.data]
+  )
+
+  const selectedTask = model?.tasks.find(task => task.id === selectedTaskId) ?? null
+
+  if (gatewayState !== 'open') {
+    return <ReadState copy="Remote Gateway 恢复后将重新读取当前项目。" title="等待 Gateway 连接" />
+  }
+
+  if (result.isPending || result.isFetching) {
+    return <div aria-label="正在读取项目详情" className="h-64 animate-pulse rounded-lg bg-foreground/5" />
+  }
+
+  if (result.isError) {
+    const unavailable = result.error instanceof WorkspaceTransportUnavailableError
+
+    return (
+      <ReadState
+        action={unavailable ? undefined : { label: '重试', onClick: () => void result.refetch() }}
+        copy="项目详情读取失败；没有用缓存或演示数据替代。"
+        title={unavailable ? '安全只读链路不可用' : '项目详情读取失败'}
+      />
+    )
+  }
+
+  if (!model) {
+    return (
+      <ReadState
+        action={{ label: '返回项目', onClick: onBack }}
+        copy="当前 snapshot 中没有该 Project ID；可能已删除或关系已变更。"
+        title="项目不存在"
+      />
+    )
+  }
+
+  const { project } = model
+
+  return (
+    <div>
+      <button
+        className="mb-4 flex items-center gap-1 text-xs text-(--ui-text-tertiary) hover:text-foreground"
+        onClick={onBack}
+        type="button"
+      >
+        <Codicon name="arrow-left" size="0.75rem" />
+        返回项目
+      </button>
+
+      <header className="rounded-lg border border-(--ui-stroke-quaternary) bg-(--ui-sidebar-surface-background) p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="text-[0.6875rem] tracking-[0.12em] text-(--ui-text-quaternary)">{project.id}</div>
+            <h2 className="mt-1 text-lg font-medium">{project.name}</h2>
+          </div>
+          <span className="rounded-full border border-(--ui-stroke-quaternary) px-2 py-1 text-xs text-(--ui-text-tertiary)">
+            {project.typeLabel}
+          </span>
+        </div>
+        <dl className="mt-5 grid grid-cols-2 gap-x-5 gap-y-4 md:grid-cols-4">
+          <Fact label="当前状态" value={project.status} />
+          <Fact label="当前阶段" value={project.stage} />
+          <Fact label="总体进度" value={project.progress === null ? null : `${project.progress}%`} />
+          <Fact label="下一个 DDL" value={project.nextDeadline ? dateLabel(project.nextDeadline) : null} />
+          <Fact label="下一步" value={project.nextAction} />
+          <Fact label="风险" value={project.risk} />
+          <Fact label="个人 / 团队" value={project.ownership === 'unset' ? null : project.ownership === 'team' ? '团队' : '个人'} />
+          <Fact label="标签" value={project.tags.length ? project.tags.join('、') : null} />
+        </dl>
+      </header>
+
+      <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1.45fr)_minmax(18rem,0.75fr)]">
+        <div className="space-y-7">
+          <Section title="当前任务">
+            {model.tasks.length === 0 ? (
+              <EmptyReadState copy="当前项目没有关联的正式任务。" />
+            ) : (
+              <div className="space-y-2">
+                {model.tasks.map(task => (
+                  <button
+                    className="grid w-full gap-2 rounded-lg border border-(--ui-stroke-quaternary) p-3 text-left hover:bg-(--ui-hover-overlay) sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center"
+                    key={task.id}
+                    onClick={() => setSelectedTaskId(task.id)}
+                    type="button"
+                  >
+                    <div className="min-w-0">
+                      <div className="truncate text-xs font-medium">{task.title}</div>
+                      <div className="mt-1 truncate text-[0.6875rem] text-(--ui-text-quaternary)">{task.id}</div>
+                    </div>
+                    <div className="text-xs text-(--ui-text-tertiary)">
+                      <div>{task.statusLabel ?? TASK_STATUS_LABELS[task.status]}</div>
+                      <div className="mt-1 text-[0.6875rem] text-(--ui-text-quaternary)">
+                        {task.priorityLabel ?? PRIORITY_LABELS[task.priority]} · {WORKBRIDGE_LABELS[task.workBridgeState]}
+                      </div>
+                    </div>
+                    <div className="text-xs text-(--ui-text-quaternary)">
+                      <div>{task.deadline ? dateLabel(task.deadline) : 'DDL 未设置'}</div>
+                      <div className="mt-1">估时 {display(task.estimate)} · 执行者 {display(task.executor)}</div>
+                    </div>
+                    <div className="sm:col-span-3">
+                      <div className="text-[0.6875rem] text-(--ui-text-quaternary)">下一步</div>
+                      <div className="mt-1 line-clamp-2 text-xs text-(--ui-text-secondary)">
+                        {display(task.nextAction)}
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </Section>
+
+          <Section title="相关资料 / 交付物">
+            {model.deliverables.length === 0 ? (
+              <EmptyReadState copy="当前项目没有可确认关联的 Manifest / Deliverable。" />
+            ) : (
+              <ul className="space-y-2">
+                {model.deliverables.map(item => (
+                  <li className="rounded-md bg-foreground/4 px-3 py-2 text-xs" key={item.id}>
+                    {item.filename} · {item.sizeBytes} bytes
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Section>
+
+          <Section title="最近活动">
+            {model.activities.length === 0 ? (
+              <EmptyReadState copy="当前没有正式 Activity source。" />
+            ) : (
+              <ul className="space-y-2">
+                {model.activities.map(item => (
+                  <li className="text-xs" key={item.id}>
+                    {item.summary}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Section>
+        </div>
+
+        <div className="space-y-7">
+          <Section title="四层时间轴">
+            <div className="space-y-3">
+              {model.timeline.map(layer => (
+                <TimelineLayer key={layer.key} layer={layer} />
+              ))}
+            </div>
+          </Section>
+          <Section title="对接人 / 等待事项">
+            <dl className="grid grid-cols-2 gap-4 rounded-lg border border-(--ui-stroke-quaternary) p-3">
+              <Fact label="对接人" value={null} />
+              <Fact label="等待事项" value={null} />
+            </dl>
+          </Section>
+        </div>
+      </div>
+
+      <TaskInspector
+        deliverables={model.deliverables}
+        onClose={() => setSelectedTaskId(null)}
+        onSelectTask={setSelectedTaskId}
+        open={selectedTask !== null}
+        project={project}
+        task={selectedTask}
+        tasks={model.tasks}
+      />
+    </div>
+  )
+}

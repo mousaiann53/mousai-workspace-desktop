@@ -47,9 +47,22 @@ function ProjectFact({ label, value }: { label: string; value: null | number | s
   )
 }
 
-function ProjectCard({ project, openTaskCount }: { project: Project; openTaskCount: number }) {
+function ProjectCard({
+  onOpen,
+  project,
+  openTaskCount
+}: {
+  onOpen?: () => void
+  project: Project
+  openTaskCount: number
+}) {
   return (
-    <article className="rounded-lg border border-(--ui-stroke-quaternary) bg-(--ui-sidebar-surface-background) p-4">
+    <button
+      aria-label={`打开项目：${project.name}`}
+      className="rounded-lg border border-(--ui-stroke-quaternary) bg-(--ui-sidebar-surface-background) p-4 text-left transition-colors hover:bg-(--ui-hover-overlay) focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+      onClick={onOpen}
+      type="button"
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="text-[0.6875rem] font-medium tracking-[0.12em] text-(--ui-text-quaternary)">
@@ -80,7 +93,7 @@ function ProjectCard({ project, openTaskCount }: { project: Project; openTaskCou
         <div className="text-[0.6875rem] text-(--ui-text-quaternary)">下一步</div>
         <p className="mt-1 line-clamp-2 text-xs leading-5 text-(--ui-text-secondary)">{display(project.nextAction)}</p>
       </div>
-    </article>
+    </button>
   )
 }
 
@@ -128,9 +141,11 @@ function GalleryState({
 
 export function ProjectGallery({
   gatewayState,
+  onOpenProject,
   transport
 }: {
   gatewayState: string
+  onOpenProject?: (projectId: string) => void
   transport: WorkspaceReadTransport
 }) {
   const [query, setQuery] = useState('')
@@ -253,7 +268,12 @@ export function ProjectGallery({
               </div>
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                 {group.projects.map(card => (
-                  <ProjectCard key={card.project.id} openTaskCount={card.openTaskCount} project={card.project} />
+                  <ProjectCard
+                    key={card.project.id}
+                    onOpen={() => onOpenProject?.(card.project.id)}
+                    openTaskCount={card.openTaskCount}
+                    project={card.project}
+                  />
                 ))}
               </div>
             </section>
