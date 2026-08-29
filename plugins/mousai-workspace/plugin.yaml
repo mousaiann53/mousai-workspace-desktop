@@ -1,4 +1,3 @@
 name: mousai-workspace
 version: 1.0.0
 description: Credential-isolated, read-only Workspace snapshot backend
-

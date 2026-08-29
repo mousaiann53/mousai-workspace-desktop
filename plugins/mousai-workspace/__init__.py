@@ -3,4 +3,3 @@
 
 def register(_ctx):
     """The capability is provided only by dashboard/plugin_api.py."""
-

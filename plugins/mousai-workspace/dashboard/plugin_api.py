@@ -275,4 +275,3 @@ def get_workspace_snapshot():
             status_code=502,
             detail={"code": "workspace_read_failed", "message": "Workspace data read failed"},
         ) from exc
-

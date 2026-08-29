@@ -3,4 +3,3 @@
 window.__HERMES_PLUGINS__?.register('mousai-workspace', function MousaiWorkspaceBackendOnly() {
   return null
 })
-
