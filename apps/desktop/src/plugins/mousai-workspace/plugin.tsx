@@ -5,6 +5,7 @@ import { useSearchParams } from 'react-router'
 import { Dashboard } from './dashboard'
 import { ProjectDetail } from './project-detail'
 import { ProjectGallery } from './project-gallery'
+import { ResourceArchiveView } from './resource-archive'
 import { createLocalDeliverableAccess, type LocalDeliverableAccess } from './service-local-deliverables'
 import type { WorkspaceProductionActionTransport } from './service-production-actions'
 import { createTaskCreateDraftStore, type TaskCreateDraftStore } from './service-task-create-draft'
@@ -159,6 +160,39 @@ function TasksPage({ draftStore, transport }: { draftStore: TaskCreateDraftStore
   )
 }
 
+function ResourceArchivePage({
+  localAccess,
+  mode,
+  transport
+}: {
+  localAccess: LocalDeliverableAccess
+  mode: 'archive' | 'resources'
+  transport: WorkspaceTransport
+}) {
+  const gatewayState = useValue(host.state.gateway)
+
+  return (
+    <WorkspacePage eyebrow="WORKSPACE" title={mode === 'resources' ? '资料' : '归档'}>
+      <ResourceArchiveView
+        gatewayState={gatewayState}
+        localAccess={localAccess}
+        mode={mode}
+        onOpenResource={entry => {
+          if (entry.project) {
+            navigateWorkspace(
+              projectWorkspaceLink(entry.project.id, { workId: entry.deliverable.workId, panel: 'deliverable' })
+            )
+          }
+        }}
+        onOpenTask={(task, projectId) =>
+          navigateWorkspace(projectWorkspaceLink(projectId, { workId: task.id, panel: 'task' }))
+        }
+        transport={transport}
+      />
+    </WorkspacePage>
+  )
+}
+
 function PendingPage({ section }: { section: WorkspaceSection }) {
   return (
     <WorkspacePage eyebrow="WORKSPACE" title={section.label}>
@@ -183,6 +217,14 @@ function renderSection(
 
   if (section.id === 'todos') {
     return <TasksPage draftStore={draftStore} transport={transport} />
+  }
+
+  if (section.id === 'resources') {
+    return <ResourceArchivePage localAccess={localAccess} mode="resources" transport={transport} />
+  }
+
+  if (section.id === 'archive') {
+    return <ResourceArchivePage localAccess={localAccess} mode="archive" transport={transport} />
   }
 
   return <PendingPage section={section} />
