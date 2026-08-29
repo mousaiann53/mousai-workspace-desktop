@@ -95,6 +95,7 @@ describe('ProjectGallery', () => {
 
     expect(await screen.findByText('历史建筑活化利用')).toBeTruthy()
     expect(screen.getByText('研究项目')).toBeTruthy()
+    expect(screen.getByText('未设置时间范围')).toBeTruthy()
     expect(screen.getAllByText('教学').length).toBeGreaterThanOrEqual(2)
     expect(screen.getAllByText('科研').length).toBeGreaterThanOrEqual(2)
     expect(screen.getAllByText('未设置').length).toBeGreaterThan(5)
