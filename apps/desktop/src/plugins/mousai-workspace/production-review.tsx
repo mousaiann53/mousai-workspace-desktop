@@ -1,6 +1,6 @@
 import { Button } from '@hermes/plugin-sdk'
 
-import type { ProductionGateState, ProductionReview, Task } from './domain'
+import type { Deliverable, ProductionGateState, ProductionReview, Task } from './domain'
 import { ProductionActionPanel } from './production-actions'
 import type { WorkspaceProductionActionTransport } from './service-production-actions'
 import type { ProductionReviewItem } from './service-production-review'
@@ -109,6 +109,14 @@ function acceptanceBadge(review: ProductionReview | null): string {
   return '验收状态未设置'
 }
 
+function fileState(deliverables: readonly Deliverable[], select: (deliverable: Deliverable) => string): string {
+  if (!deliverables.length) {
+    return '未设置 / 等待输入'
+  }
+
+  return [...new Set(deliverables.map(select))].join('、')
+}
+
 function ReviewFact({ label, children }: { label: string; children: string }) {
   return (
     <div>
@@ -129,7 +137,7 @@ export function ProductionReviewCard({
   onRefresh: () => Promise<unknown>
   transport: WorkspaceProductionActionTransport
 }) {
-  const { deliverables, project, review, task } = item
+  const { deliverables, producer, project, provenance, review, task } = item
   const gate = review ? GATE_LABELS[review.gateState] : '未设置 / 等待输入'
   const scopeVersion = review?.approvedScope ? `v${review.approvedScope.version}` : '未设置 / 等待输入'
   const finalVersion = review?.gateState === 'ACCEPTED' ? review.manifestVersion : null
@@ -160,11 +168,15 @@ export function ProductionReviewCard({
 
       <dl className="mt-4 grid gap-x-5 gap-y-4 sm:grid-cols-2 xl:grid-cols-3">
         <ReviewFact label="所属项目">{project.name}</ReviewFact>
+        <ReviewFact label="Deliverable title">{task.title}</ReviewFact>
+        <ReviewFact label="Producer">{value(producer)}</ReviewFact>
+        <ReviewFact label="Provenance">{value(provenance)}</ReviewFact>
         <ReviewFact label="当前 Gate">{gate}</ReviewFact>
         <ReviewFact label="Gate 权威">{review ? 'WorkBridge' : '未设置 / 等待输入'}</ReviewFact>
         <ReviewFact label="Production 状态">
           {review ? PRODUCTION_STATUS_LABELS[review.gateState] : '未设置 / 等待输入'}
         </ReviewFact>
+        <ReviewFact label="Task 状态">{value(task.statusLabel)}</ReviewFact>
         <ReviewFact label="DDL">{dateValue(task.deadline)}</ReviewFact>
         <ReviewFact label="当前执行者">{value(task.executor)}</ReviewFact>
         <ReviewFact label="下一步">{value(task.nextAction)}</ReviewFact>
@@ -183,6 +195,13 @@ export function ProductionReviewCard({
         <ReviewFact label="最终版本">{value(finalVersion)}</ReviewFact>
         <ReviewFact label="Skill candidate 状态">未设置 / 等待输入</ReviewFact>
         <ReviewFact label="验收结果">{value(review?.acceptance?.verdict ?? null)}</ReviewFact>
+        <ReviewFact label="Submission 状态">
+          {fileState(deliverables, deliverable => deliverable.submissionState)}
+        </ReviewFact>
+        <ReviewFact label="Delivery 状态">
+          {fileState(deliverables, deliverable => deliverable.deliveryState)}
+        </ReviewFact>
+        <ReviewFact label="Acceptance 状态">{acceptanceBadge(review)}</ReviewFact>
         <ReviewFact label="Gate 事件">{review ? `${review.events.length} 条` : '未设置 / 等待输入'}</ReviewFact>
       </dl>
 

@@ -163,9 +163,13 @@ describe('Production Review presentation', () => {
 
     for (const label of [
       '所属项目',
+      'Deliverable title',
+      'Producer',
+      'Provenance',
       '当前 Gate',
       'Gate 权威',
       'Production 状态',
+      'Task 状态',
       'DDL',
       '当前执行者',
       '下一步',
@@ -180,12 +184,16 @@ describe('Production Review presentation', () => {
       '最终版本',
       'Skill candidate 状态',
       '验收结果',
+      'Submission 状态',
+      'Delivery 状态',
+      'Acceptance 状态',
       'Gate 事件'
     ]) {
       expect(screen.getAllByText(label).length).toBeGreaterThanOrEqual(1)
     }
 
     expect(screen.getByText('历史建筑活化利用')).toBeTruthy()
+    expect(screen.getAllByText('正式交付任务').length).toBeGreaterThanOrEqual(2)
     expect(screen.getByText('等待验收（WAITING_ACCEPTANCE）')).toBeTruthy()
     expect(screen.getByText('WorkBridge')).toBeTruthy()
     expect(screen.getByText('v3')).toBeTruthy()
@@ -195,11 +203,70 @@ describe('Production Review presentation', () => {
     expect(screen.getByText('r2')).toBeTruthy()
     expect(screen.getByText('已提交')).toBeTruthy()
     expect(screen.getByText('已交付')).toBeTruthy()
-    expect(screen.getAllByText('待人工验收')).toHaveLength(2)
+    expect(screen.getAllByText('待人工验收')).toHaveLength(3)
     expect(screen.getByText(/Manifest：final.pdf · 1024 bytes · .pdf · version manifest-v3/)).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: '打开本地产物' }))
     expect(onOpenLocal).toHaveBeenCalledWith(task.id)
+  })
+
+  it('attributes WorkBuddy only when canonical events contain real WorkBuddy production evidence', () => {
+    const baseline = review()
+
+    const workBuddyReview = review({
+      events: [
+        ...baseline.events,
+        {
+          state: 'READY_FOR_PRODUCTION',
+          at: '2026-08-29T03:00:00.000Z',
+          actor: 'workbuddy',
+          note: 'production started',
+          revision: 2,
+          revisionReason: null,
+          reviewerComment: null,
+          manifestVersion: null
+        }
+      ]
+    })
+
+    const [item] = buildProductionReviewItems(project, [task], [deliverable], [workBuddyReview])
+
+    expect(item.producer).toBe('workbuddy')
+    expect(item.provenance).toBe('Mousai Workspace / WorkBuddy')
+  })
+
+  it('keeps provenance unset when a title looks like M5 but canonical evidence names no producer', () => {
+    const [item] = buildProductionReviewItems(
+      project,
+      [{ ...task, title: 'M5 教学计划', origin: 'Control' }],
+      [deliverable],
+      [review()]
+    )
+
+    expect(item.producer).toBeNull()
+    expect(item.provenance).toBeNull()
+  })
+
+  it('uses explicit GPT-PM evidence for an external production record', () => {
+    const externalReview = review({
+      events: [
+        {
+          state: 'WAITING_ACCEPTANCE',
+          at: '2026-08-29T03:00:00.000Z',
+          actor: 'GPT-PM',
+          note: 'external delivery',
+          revision: 1,
+          revisionReason: null,
+          reviewerComment: null,
+          manifestVersion: 'manifest-v3'
+        }
+      ]
+    })
+
+    const [item] = buildProductionReviewItems(project, [task], [deliverable], [externalReview])
+
+    expect(item.producer).toBe('GPT-PM')
+    expect(item.provenance).toBe('external / GPT-PM + Mousai')
   })
 
   it('keeps absent ProductionReadModel fields visibly unset and never invents a record', () => {

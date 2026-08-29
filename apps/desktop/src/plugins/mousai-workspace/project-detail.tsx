@@ -741,7 +741,7 @@ export function ProjectDetail({
             )}
           </Section>
 
-          <Section title="Production Review / 交付物">
+          <Section title="Deliverable / Production Center">
             {model.productionReviewItems.length === 0 ? (
               <EmptyReadState copy="当前项目没有可确认关联的正式任务。" />
             ) : (
