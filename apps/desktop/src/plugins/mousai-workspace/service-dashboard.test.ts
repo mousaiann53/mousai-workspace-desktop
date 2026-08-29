@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import type { Deliverable, ProductionGateState, ProductionReview, Task, WorkspaceSnapshot } from './domain'
+import type { Deliverable, ProductionGateState, ProductionReview, Project, Task, WorkspaceSnapshot } from './domain'
 import { buildDashboardModel } from './service-dashboard'
 
 function task(id: string, status: Task['status'], deadline: string | null = null): Task {
@@ -9,7 +9,7 @@ function task(id: string, status: Task['status'], deadline: string | null = null
     revision: null,
     title: id,
     typeLabel: null,
-    projectRef: null,
+    projectRef: 'PROJECT-1',
     status,
     statusLabel: null,
     priority: 'unset',
@@ -27,6 +27,13 @@ function task(id: string, status: Task['status'], deadline: string | null = null
     source: { system: 'workdata', recordId: id }
   }
 }
+
+const project = {
+  id: 'PROJECT-1',
+  name: '真实项目',
+  type: 'teaching',
+  typeLabel: '教学'
+} as Project
 
 function review(
   workId: string,
@@ -74,7 +81,7 @@ function deliverable(workId: string): Deliverable {
 }
 
 describe('dashboard model', () => {
-  it('builds seven real-data views without filling missing DDL or inventing facts', () => {
+  it('builds nine real-data views without filling missing DDL or inventing facts', () => {
     const tasks = [
       task('WORK-1', 'classified', '2026-08-28T16:00:00Z'),
       task('WORK-2', 'classified', '2026-09-02T16:00:00Z'),
@@ -83,11 +90,13 @@ describe('dashboard model', () => {
       task('WORK-5', 'decision_required'),
       task('WORK-6', 'local_processing'),
       task('WORK-7', 'review'),
-      task('WORK-8', 'classified')
+      task('WORK-8', 'classified'),
+      task('WORK-9', 'waiting_local'),
+      task('WORK-10', 'completed')
     ]
 
     const snapshot: WorkspaceSnapshot = {
-      projects: [],
+      projects: [project],
       tasks,
       events: [],
       deliverables: [deliverable('WORK-7')],
@@ -109,8 +118,11 @@ describe('dashboard model', () => {
     expect(model.review.map(item => item.task.id)).toEqual(['WORK-7', 'WORK-3'])
     expect(model.missing.map(item => item.task.id)).toEqual(['WORK-4'])
     expect(model.decision.map(item => item.task.id)).toEqual(['WORK-5'])
-    expect(model.producing.map(item => item.task.id)).toEqual(['WORK-6'])
+    expect(model.waitingLocal.map(item => item.task.id)).toEqual(['WORK-9'])
+    expect(model.processing.map(item => item.task.id)).toEqual(['WORK-6'])
     expect(model.recentDelivered.map(item => item.task.id)).toEqual(['WORK-7'])
+    expect(model.recentCompleted.map(item => item.task.id)).toEqual(['WORK-10'])
+    expect(model.processing[0].projectId).toBe('PROJECT-1')
     expect(model.deliveredFilesByWorkId.get('WORK-7')?.map(file => file.filename)).toEqual(['final.pdf'])
     expect(model.today.some(item => item.task.id === 'WORK-8')).toBe(false)
     expect(model.upcoming.some(item => item.task.id === 'WORK-8')).toBe(false)
@@ -118,7 +130,7 @@ describe('dashboard model', () => {
 
   it('fails closed when duplicate production reviews make authority ambiguous', () => {
     const snapshot: WorkspaceSnapshot = {
-      projects: [],
+      projects: [project],
       tasks: [task('WORK-1', 'classified')],
       events: [],
       deliverables: [],
@@ -130,6 +142,6 @@ describe('dashboard model', () => {
     const model = buildDashboardModel(snapshot)
 
     expect(model.decision).toEqual([])
-    expect(model.producing).toEqual([])
+    expect(model.processing).toEqual([])
   })
 })

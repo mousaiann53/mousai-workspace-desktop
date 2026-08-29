@@ -1,12 +1,22 @@
 import type { Deliverable, ProductionReview, Task, WorkspaceSnapshot } from './domain'
+import { projectMatchesRef } from './service-project-gallery'
 import { tasksForView } from './service-task-views'
 
 export type DashboardSectionId =
-  'decision' | 'missing' | 'producing' | 'recentDelivered' | 'review' | 'today' | 'upcoming'
+  | 'decision'
+  | 'missing'
+  | 'processing'
+  | 'recentCompleted'
+  | 'recentDelivered'
+  | 'review'
+  | 'today'
+  | 'upcoming'
+  | 'waitingLocal'
 
 export interface DashboardTaskItem {
   readonly task: Task
   readonly review: ProductionReview | null
+  readonly projectId: string | null
 }
 
 export interface DashboardModel {
@@ -15,8 +25,10 @@ export interface DashboardModel {
   readonly review: readonly DashboardTaskItem[]
   readonly missing: readonly DashboardTaskItem[]
   readonly decision: readonly DashboardTaskItem[]
-  readonly producing: readonly DashboardTaskItem[]
+  readonly waitingLocal: readonly DashboardTaskItem[]
+  readonly processing: readonly DashboardTaskItem[]
   readonly recentDelivered: readonly DashboardTaskItem[]
+  readonly recentCompleted: readonly DashboardTaskItem[]
   readonly deliveredFilesByWorkId: ReadonlyMap<string, readonly Deliverable[]>
 }
 
@@ -40,18 +52,31 @@ function byUpdatedAt(left: Task, right: Task): number {
 }
 
 function taskItems(
+  snapshot: WorkspaceSnapshot,
   tasks: readonly Task[],
   reviews: ReadonlyMap<string, ProductionReview>
 ): readonly DashboardTaskItem[] {
-  return tasks.map(task => ({ task, review: reviews.get(task.id) ?? null }))
+  return tasks.map(task => {
+    const projects = snapshot.projects.filter(project => projectMatchesRef(project, task.projectRef))
+
+    return {
+      task,
+      review: reviews.get(task.id) ?? null,
+      projectId: projects.length === 1 ? projects[0].id : null
+    }
+  })
 }
 
 function select(
-  tasks: readonly Task[],
+  snapshot: WorkspaceSnapshot,
   reviews: ReadonlyMap<string, ProductionReview>,
   predicate: (task: Task, review: ProductionReview | null) => boolean
 ): readonly DashboardTaskItem[] {
-  return taskItems(tasks.filter(task => predicate(task, reviews.get(task.id) ?? null)).toSorted(byUpdatedAt), reviews)
+  return taskItems(
+    snapshot,
+    snapshot.tasks.filter(task => predicate(task, reviews.get(task.id) ?? null)).toSorted(byUpdatedAt),
+    reviews
+  )
 }
 
 function deliveredFiles(deliverables: readonly Deliverable[]): ReadonlyMap<string, readonly Deliverable[]> {
@@ -83,10 +108,10 @@ export function buildDashboardModel(snapshot: WorkspaceSnapshot, now = new Date(
   ])
 
   return {
-    today: taskItems(tasksForView(snapshot.tasks, 'today', now), reviews),
-    upcoming: taskItems(tasksForView(snapshot.tasks, 'recent', now), reviews),
+    today: taskItems(snapshot, tasksForView(snapshot.tasks, 'today', now), reviews),
+    upcoming: taskItems(snapshot, tasksForView(snapshot.tasks, 'recent', now), reviews),
     review: select(
-      snapshot.tasks,
+      snapshot,
       reviews,
       (task, review) =>
         task.status === 'review' ||
@@ -94,7 +119,7 @@ export function buildDashboardModel(snapshot: WorkspaceSnapshot, now = new Date(
         review?.gateState === 'WAITING_HUMAN_APPROVAL'
     ),
     missing: select(
-      snapshot.tasks,
+      snapshot,
       reviews,
       (task, review) =>
         task.status === 'material_missing' ||
@@ -102,15 +127,20 @@ export function buildDashboardModel(snapshot: WorkspaceSnapshot, now = new Date(
         Boolean(review?.missingInformation.length)
     ),
     decision: select(
-      snapshot.tasks,
+      snapshot,
       reviews,
       (task, review) =>
         task.status === 'decision_required' ||
         review?.gateState === 'DECISION_REQUIRED' ||
         review?.decisionRequired === true
     ),
-    producing: select(
-      snapshot.tasks,
+    waitingLocal: select(
+      snapshot,
+      reviews,
+      task => task.status === 'waiting_local' || task.workBridgeState === 'waiting'
+    ),
+    processing: select(
+      snapshot,
       reviews,
       (task, review) =>
         task.status === 'cloud_processing' ||
@@ -118,9 +148,11 @@ export function buildDashboardModel(snapshot: WorkspaceSnapshot, now = new Date(
         review?.gateState === 'READY_FOR_PRODUCTION'
     ),
     recentDelivered: taskItems(
+      snapshot,
       snapshot.tasks.filter(task => recentDeliveredIds.has(task.id)).toSorted(byUpdatedAt),
       reviews
     ),
+    recentCompleted: select(snapshot, reviews, task => task.status === 'completed'),
     deliveredFilesByWorkId: filesByWorkId
   }
 }

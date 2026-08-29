@@ -598,6 +598,7 @@ function ReadState({
 
 export function ProjectDetail({
   gatewayState,
+  initialTaskId,
   localAccess,
   mutationTransport,
   onBack,
@@ -605,6 +606,7 @@ export function ProjectDetail({
   transport
 }: {
   gatewayState: string
+  initialTaskId?: string | null
   localAccess: LocalDeliverableAccess
   mutationTransport: WorkspaceTaskMutationTransport & WorkspaceProductionActionTransport
   onBack: () => void
@@ -629,6 +631,12 @@ export function ProjectDetail({
   )
 
   const selectedTask = model?.tasks.find(task => task.id === selectedTaskId) ?? null
+
+  useEffect(() => {
+    if (initialTaskId && model?.tasks.some(task => task.id === initialTaskId)) {
+      setSelectedTaskId(initialTaskId)
+    }
+  }, [initialTaskId, model])
 
   if (gatewayState !== 'open') {
     return <ReadState copy="Remote Gateway 恢复后将重新读取当前项目。" title="等待 Gateway 连接" />

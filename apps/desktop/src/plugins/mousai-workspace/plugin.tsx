@@ -12,6 +12,7 @@ import type { WorkspaceTaskMutationTransport } from './service-task-mutation'
 import type { WorkspaceReadTransport } from './service-workspace-read'
 import { TaskCenter } from './task-center'
 import { createPluginWorkspaceReadTransport } from './transport-plugin-rest'
+import { projectWorkspaceLink, type WorkspaceFocusPanel } from './workspace-links'
 
 const ID = 'mousai-workspace'
 const DEFAULT_ROUTE = '/workspace'
@@ -93,7 +94,15 @@ function DashboardPage({ transport }: { transport: WorkspaceTransport }) {
 
   return (
     <WorkspacePage eyebrow="WORKSPACE" title="看板">
-      <Dashboard gatewayState={gatewayState} transport={transport} />
+      <Dashboard
+        gatewayState={gatewayState}
+        onOpenItem={(item, panel) => {
+          if (item.projectId) {
+            navigateWorkspace(projectWorkspaceLink(item.projectId, { workId: item.task.id, panel }))
+          }
+        }}
+        transport={transport}
+      />
     </WorkspacePage>
   )
 }
@@ -110,12 +119,19 @@ function ProjectsPage({
   const gatewayState = useValue(host.state.gateway)
   const [searchParams] = useSearchParams()
   const projectId = searchParams.get('project')
+  const workId = searchParams.get('work')
+  const panelValue = searchParams.get('panel')
+
+  const panel: WorkspaceFocusPanel | null = ['deliverable', 'history', 'skill', 'task'].includes(panelValue ?? '')
+    ? (panelValue as WorkspaceFocusPanel)
+    : null
 
   return (
     <WorkspacePage eyebrow="WORKSPACE" title={projectId ? '项目详情' : '项目'}>
       {projectId ? (
         <ProjectDetail
           gatewayState={gatewayState}
+          initialTaskId={panel === 'task' ? workId : null}
           localAccess={localAccess}
           mutationTransport={transport}
           onBack={() => navigateWorkspace('/workspace/projects')}
