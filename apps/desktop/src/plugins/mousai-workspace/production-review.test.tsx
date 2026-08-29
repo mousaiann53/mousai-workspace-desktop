@@ -207,6 +207,9 @@ describe('Production Review presentation', () => {
     expect(screen.getByText('已交付')).toBeTruthy()
     expect(screen.getAllByText('待人工验收')).toHaveLength(3)
     expect(screen.getByText(/Manifest：final.pdf · 1024 bytes · .pdf · version manifest-v3/)).toBeTruthy()
+    expect(screen.getByText('Artifact metadata comparison')).toBeTruthy()
+    expect(screen.getByText('Current revision')).toBeTruthy()
+    expect(screen.getByText(/canonical snapshot 尚未提供 previous revision/)).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: '打开本地产物' }))
     expect(onOpenLocal).toHaveBeenCalledWith(task.id)

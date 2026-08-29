@@ -1,5 +1,6 @@
 import { Button } from '@hermes/plugin-sdk'
 
+import { ArtifactComparison } from './artifact-comparison'
 import type { Deliverable, ProductionGateState, ProductionReview, Task } from './domain'
 import { ProductionActionPanel } from './production-actions'
 import { ProductionHistory } from './production-history'
@@ -225,6 +226,11 @@ export function ProductionReviewCard({
         ) : (
           <p className="text-xs text-(--ui-text-tertiary)">Manifest 未设置 / 等待输入。</p>
         )}
+      </div>
+
+      <div className="mt-4 border-t border-(--ui-stroke-quaternary) pt-3">
+        <div className="mb-2 text-[0.6875rem] text-(--ui-text-quaternary)">Artifact metadata comparison</div>
+        <ArtifactComparison item={item} />
       </div>
 
       <div className="mt-4 border-t border-(--ui-stroke-quaternary) pt-3">
