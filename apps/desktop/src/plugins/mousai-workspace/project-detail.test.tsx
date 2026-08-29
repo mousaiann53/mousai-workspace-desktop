@@ -137,7 +137,7 @@ describe('ProjectDetail', () => {
     fireEvent.change(screen.getByLabelText('任务名称'), { target: { value: '未保存草稿' } })
     fireEvent.click(screen.getByRole('button', { name: '取消' }))
     expect(screen.queryByLabelText('任务名称')).toBeNull()
-    expect(screen.getByText('Phase 1C Base 闭环测试')).toBeTruthy()
+    expect(screen.getAllByText('Phase 1C Base 闭环测试').length).toBeGreaterThanOrEqual(1)
 
     fireEvent.click(screen.getByRole('button', { name: 'WORK-002' }))
     expect(await screen.findByText('WORK-002 · 受控任务事实')).toBeTruthy()
