@@ -126,6 +126,22 @@ describe('ProjectGallery', () => {
     expect(screen.queryByText('研究项目')).toBeNull()
   })
 
+  it('opens a real project by its stable Project ID', async () => {
+    const onOpenProject = vi.fn()
+
+    renderGallery(
+      <ProjectGallery
+        gatewayState="open"
+        onOpenProject={onOpenProject}
+        transport={transport(async () => snapshot([projectRecord('PROJECT-001', '历史建筑活化利用', '教学')]))}
+      />
+    )
+
+    fireEvent.click(await screen.findByRole('button', { name: '打开项目：历史建筑活化利用' }))
+    expect(onOpenProject).toHaveBeenCalledOnce()
+    expect(onOpenProject).toHaveBeenCalledWith('PROJECT-001')
+  })
+
   it('waits while disconnected and reads once the Remote Gateway returns', async () => {
     const read = vi.fn(async () => snapshot([projectRecord('PROJECT-001', '历史建筑活化利用', '教学')]))
     const source = transport(read)
