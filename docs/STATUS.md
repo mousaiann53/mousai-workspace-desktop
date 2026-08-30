@@ -1,18 +1,19 @@
 # Mousai Workspace Desktop status
 
-Updated: 2026-08-29  
-Active branch: `feature/v1-s2-planning-foundation`
+Updated: 2026-08-30
+Active branch: `feature/v1-s3-intake-foundation`
 
 ## Milestones
 
-| Milestone                       | Status                   | Evidence                                                                                                                                                                     |
-| ------------------------------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| V1-S1 M1 Desktop baseline       | PASS                     | Official Hermes Desktop build, Remote Gateway, Sessions, Bots, chat, Tool Calling, preview, and restart baseline accepted.                                                   |
-| V1-S1 M2-A Persona + i18n       | PASS                     | 乙木, 司木 Moss, 溯光菌, and official `zh` baseline accepted.                                                                                                                |
-| V1-S1 M2-B Workspace shell      | PASS                     | Mousai identity, Editorial Blue shell, plugin seam, and Windows branding accepted.                                                                                           |
-| V1-S1 M3 Project module         | PASS                     | Project Gallery, detail, task center/mutations, canonical production review, and stable deep links accepted by GPT/PM.                                                       |
-| V1-S1 M4–M10 content production | NOT CLAIMED              | Desktop product surfaces are implemented; real course/work deliverables remain subject to their own production and Mousai acceptance.                                        |
-| V1-S2 Planning foundation       | COMPLETE / CONTRACT HOLD | Todo, Agenda, timeline, capacity, deterministic preview, review, night safety, history, and small-window surfaces are built. Live schedule writes await canonical contracts. |
+| Milestone                       | Status                   | Evidence                                                                                                                                                                                                                   |
+| ------------------------------- | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| V1-S1 M1 Desktop baseline       | PASS                     | Official Hermes Desktop build, Remote Gateway, Sessions, Bots, chat, Tool Calling, preview, and restart baseline accepted.                                                                                                 |
+| V1-S1 M2-A Persona + i18n       | PASS                     | 乙木, 司木 Moss, 溯光菌, and official `zh` baseline accepted.                                                                                                                                                              |
+| V1-S1 M2-B Workspace shell      | PASS                     | Mousai identity, Editorial Blue shell, plugin seam, and Windows branding accepted.                                                                                                                                         |
+| V1-S1 M3 Project module         | PASS                     | Project Gallery, detail, task center/mutations, canonical production review, and stable deep links accepted by GPT/PM.                                                                                                     |
+| V1-S1 M4–M10 content production | NOT CLAIMED              | Desktop product surfaces are implemented; real course/work deliverables remain subject to their own production and Mousai acceptance.                                                                                      |
+| V1-S2 Planning foundation       | COMPLETE / CONTRACT HOLD | Todo, Agenda, timeline, capacity, deterministic preview, review, night safety, history, and small-window surfaces are built. Live schedule writes await canonical contracts.                                               |
+| V1-S3 Intake foundation         | COMPLETE / CONTRACT HOLD | Unified multi-source inbox, source audit, duplicate evidence, intake filters, scope/notification/health shells, deep links, and responsive UX are built. Live policy/merge/notification actions await canonical contracts. |
 
 This repository records Desktop engineering status only. It does not promote a course artifact or a WorkBuddy run to PASS.
 
@@ -35,10 +36,13 @@ This repository records Desktop engineering status only. It does not promote a c
 - Resource and Archive views built only from the canonical snapshot.
 - Stable project/task/deliverable/history/skill deep links with honest not-found states.
 - Six-view Todo Center, Shanghai-time Agenda, Daily Timeline, deterministic capacity/scheduling preview, after-work brief, Night Safety, and Planning History.
+- Unified Inbox with source/project/DDL/waiting/search filters, exact-compatible source identity, current-fact intake audit, evidence-only duplicate state, intake scope/notification/health surfaces, and honest stale-link handling.
 
 ## Current blocker
 
 Planning is read-only where canonical contracts are absent. Live schedule acceptance requires schedule blocks, fixed events, dependencies, planning history, night-safety evidence, and typed schedule mutations. Previous-revision artifact comparison still requires historical Manifest metadata. Desktop intentionally shows these facts as unavailable and does not infer them.
+
+Multi-source intake is also read-only where canonical contracts are absent. Source policy, ingest history, duplicate merge, notification state/actions, provider health, and archive/material-missing/decision triage require the typed contracts in `docs/V1-S3-CONTRACT-GAPS.md`.
 
 ## Post-V1 candidates
 

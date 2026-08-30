@@ -4,7 +4,7 @@
 
 # Hermes Agent ☤
 
-> **Mousai Workspace Desktop fork:** the `feature/v1-s2-planning-foundation` branch adds a canonical-data-only Planning / Todo / Calendar foundation to the accepted V1-S1 Workspace shell. Live schedule writes remain disabled until the typed Control / WorkBridge contracts in [`docs/V1-S2-CONTRACT-GAPS.md`](docs/V1-S2-CONTRACT-GAPS.md) exist. This is a Desktop engineering checkpoint, not an overall V1-S2 PASS claim.
+> **Mousai Workspace Desktop fork:** the `feature/v1-s3-intake-foundation` branch adds a canonical-data-only multi-source Unified Inbox, source audit, evidence-only duplicate handling, intake filters, source-scope/notification/health shells, deep links, and small-window hardening on top of the accepted V1-S2 foundation. Missing typed contracts remain visibly unavailable and are recorded in [`docs/V1-S3-CONTRACT-GAPS.md`](docs/V1-S3-CONTRACT-GAPS.md). This is a Desktop engineering checkpoint, not an overall V1-S3 PASS claim.
 
 <p align="center">
   <a href="https://hermes-agent.nousresearch.com/">Hermes Agent</a> | <a href="https://hermes-agent.nousresearch.com/">Hermes Desktop</a>
