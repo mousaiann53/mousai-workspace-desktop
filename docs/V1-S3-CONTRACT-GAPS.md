@@ -77,6 +77,8 @@ This document records missing canonical contracts instead of inventing Desktop t
 - Authority: the owning source adapter projected through Control.
 - Security: sanitized error codes only; no endpoint ticket, token, secret, cookie, or raw provider response.
 
-## Existing task triage gaps
+## Task triage contract reconciliation
 
-The current typed task transport supports create, edit (including project and next action), defer, and complete. Archive, material-missing, and decision-required mutations are intentionally disabled until named typed actions with revision checks, idempotency, canonical results, and snapshot refetch exist. A generic JSON editor or generic patch is not an acceptable substitute.
+WorkBridge OpenAPI already defines the canonical typed commands `POST /workspace/tasks/{work_id}/flag` (`material_missing` / `decision_required`) and `POST /workspace/tasks/{work_id}/archive`. These are **not missing WorkBridge contracts** and must not be listed as backend gaps.
+
+The current Hermes `mousai-workspace` plugin route exposed to Desktop `ctx.rest` still supports only create, edit, defer, and complete. It does not yet expose the existing WorkBridge flag/archive commands through the authenticated plugin boundary, and the Desktop Renderer must not call WorkBridge directly. Therefore the three Desktop controls remain disabled pending a typed Hermes plugin transport route that returns a canonical mutation result and permits snapshot refetch. This is an integration exposure gap, not a missing Control/WorkBridge contract; a generic JSON editor or generic patch remains prohibited.
