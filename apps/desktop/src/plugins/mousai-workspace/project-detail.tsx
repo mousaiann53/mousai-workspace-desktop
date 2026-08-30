@@ -576,7 +576,29 @@ export function TaskInspector({
                     >
                       完成
                     </Button>
+                    <Button disabled size="sm" title="缺少 typed archive mutation contract" variant="secondary">
+                      归档
+                    </Button>
+                    <Button
+                      disabled
+                      size="sm"
+                      title="缺少 typed material-missing mutation contract"
+                      variant="secondary"
+                    >
+                      资料缺失
+                    </Button>
+                    <Button
+                      disabled
+                      size="sm"
+                      title="缺少 typed decision-required mutation contract"
+                      variant="secondary"
+                    >
+                      需要决策
+                    </Button>
                   </div>
+                  <p className="mt-3 text-xs text-(--ui-text-quaternary)">
+                    归档、资料缺失、需要决策尚无 typed backend action；按钮保持关闭，不通过 generic patch 绕过。
+                  </p>
                   {capability?.reason === 'active_execution' && (
                     <p className="mt-3 text-xs text-(--ui-text-tertiary)">
                       任务正在由 WorkBridge 执行，Workspace 写操作已锁定。

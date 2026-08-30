@@ -3,6 +3,8 @@ import { type ReactNode } from 'react'
 import { useSearchParams } from 'react-router'
 
 import { Dashboard } from './dashboard'
+import type { IntakeSurface } from './intake-contracts'
+import { IntakeAuxiliarySurface, IntakeSurfaceNav } from './intake-operations'
 import { PlanningCalendar } from './planning-calendar'
 import { PlanningReview } from './planning-review'
 import { ProjectDetail } from './project-detail'
@@ -221,28 +223,43 @@ function TasksPage({ draftStore, transport }: { draftStore: TaskCreateDraftStore
   const focusWorkId = searchParams.get('work')
   const panelValue = searchParams.get('panel')
   const focusPanel = panelValue === 'source' ? 'source' : 'task'
+  const surfaceValue = searchParams.get('surface')
+
+  const surface: IntakeSurface = ['health', 'notifications', 'scope'].includes(surfaceValue ?? '')
+    ? (surfaceValue as IntakeSurface)
+    : 'inbox'
 
   return (
     <WorkspacePage eyebrow="WORKSPACE" title="待办">
-      <TaskCenter
-        draftStore={draftStore}
-        focusPanel={focusPanel}
-        focusWorkId={focusWorkId}
-        gatewayState={gatewayState}
-        onNavigateTask={(workId, panel = 'task') =>
-          navigateWorkspace(
-            workId
-              ? `/workspace/todos?work=${encodeURIComponent(workId)}&panel=${encodeURIComponent(panel)}`
-              : '/workspace/todos'
-          )
+      <IntakeSurfaceNav
+        active={surface}
+        onNavigate={next =>
+          navigateWorkspace(next === 'inbox' ? '/workspace/todos' : `/workspace/todos?surface=${next}`)
         }
-        onOpenDeliverable={(workId, projectId) => {
-          if (projectId) {
-            navigateWorkspace(projectWorkspaceLink(projectId, { workId, panel: 'deliverable' }))
-          }
-        }}
-        transport={transport}
       />
+      {surface === 'inbox' ? (
+        <TaskCenter
+          draftStore={draftStore}
+          focusPanel={focusPanel}
+          focusWorkId={focusWorkId}
+          gatewayState={gatewayState}
+          onNavigateTask={(workId, panel = 'task') =>
+            navigateWorkspace(
+              workId
+                ? `/workspace/todos?work=${encodeURIComponent(workId)}&panel=${encodeURIComponent(panel)}`
+                : '/workspace/todos'
+            )
+          }
+          onOpenDeliverable={(workId, projectId) => {
+            if (projectId) {
+              navigateWorkspace(projectWorkspaceLink(projectId, { workId, panel: 'deliverable' }))
+            }
+          }}
+          transport={transport}
+        />
+      ) : (
+        <IntakeAuxiliarySurface gatewayState={gatewayState} surface={surface} transport={transport} />
+      )}
     </WorkspacePage>
   )
 }

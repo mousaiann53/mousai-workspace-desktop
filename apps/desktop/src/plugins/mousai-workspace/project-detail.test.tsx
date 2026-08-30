@@ -144,7 +144,8 @@ describe('ProjectDetail', () => {
     expect(screen.getByRole('button', { name: '编辑' })).toBeTruthy()
     expect(screen.getByRole('button', { name: '延期' })).toBeTruthy()
     expect(screen.getByRole('button', { name: '完成' })).toBeTruthy()
-    expect(screen.queryByRole('button', { name: /新建|搁置|删除|归档|重新执行/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /新建|搁置|删除|重新执行/ })).toBeNull()
+    expect((screen.getByRole('button', { name: '归档' }) as HTMLButtonElement).disabled).toBe(true)
 
     fireEvent.click(screen.getByRole('button', { name: '编辑' }))
     fireEvent.change(screen.getByLabelText('任务名称'), { target: { value: '未保存草稿' } })
