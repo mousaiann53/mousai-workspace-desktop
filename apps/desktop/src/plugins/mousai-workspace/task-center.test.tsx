@@ -100,4 +100,30 @@ describe('TaskCenter', () => {
     expect(readSnapshot.mock.calls.length).toBeGreaterThanOrEqual(2)
     expect(draftStore.load()).toBeNull()
   })
+
+  it('shows an honest not-found state for a stale deep link', async () => {
+    const transport: WorkspaceReadTransport & WorkspaceTaskMutationTransport = {
+      scope: 'task-not-found-test',
+      readSnapshot: vi.fn(async () => snapshot),
+      createTask: vi.fn(),
+      editTask: vi.fn(),
+      deferTask: vi.fn(),
+      completeTask: vi.fn()
+    }
+    const draftStore: TaskCreateDraftStore = {
+      clear: vi.fn(),
+      load: () => null,
+      save: () => true
+    }
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+
+    render(
+      <QueryClientProvider client={client}>
+        <TaskCenter draftStore={draftStore} focusWorkId="WORK-MISSING" gatewayState="open" transport={transport} />
+      </QueryClientProvider>
+    )
+
+    expect(await screen.findByText(/目标任务 WORK-MISSING 不存在/)).toBeTruthy()
+    expect(screen.queryByRole('dialog', { name: '收件箱任务' })).toBeNull()
+  })
 })

@@ -125,7 +125,10 @@ export function UnifiedInbox({
       {items.length ? (
         <ul className="space-y-2">
           {items.map(item => (
-            <li className="rounded-lg border border-(--ui-stroke-quaternary) p-3" key={item.task.id}>
+            <li
+              className="min-w-0 overflow-hidden rounded-lg border border-(--ui-stroke-quaternary) p-3"
+              key={item.task.id}
+            >
               <button
                 aria-label={`打开任务：${item.task.title}`}
                 className="w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
@@ -144,13 +147,13 @@ export function UnifiedInbox({
                 <dl className="mt-3 grid gap-x-4 gap-y-2 text-xs sm:grid-cols-2 lg:grid-cols-4">
                   <div>
                     <dt className="text-(--ui-text-quaternary)">项目 / 状态</dt>
-                    <dd className="mt-0.5 text-(--ui-text-secondary)">
+                    <dd className="mt-0.5 break-words text-(--ui-text-secondary)">
                       {display(item.project?.name ?? item.task.projectRef)} · {display(item.task.statusLabel)}
                     </dd>
                   </div>
                   <div>
                     <dt className="text-(--ui-text-quaternary)">来源渠道 / sender</dt>
-                    <dd className="mt-0.5 text-(--ui-text-secondary)">
+                    <dd className="mt-0.5 break-words text-(--ui-text-secondary)">
                       {display(item.sourceIdentity.channel)} · {display(item.sourceIdentity.displayName)}
                     </dd>
                   </div>
@@ -162,7 +165,7 @@ export function UnifiedInbox({
                   </div>
                   <div>
                     <dt className="text-(--ui-text-quaternary)">Confidence / extraction</dt>
-                    <dd className="mt-0.5 text-(--ui-text-secondary)">
+                    <dd className="mt-0.5 break-words text-(--ui-text-secondary)">
                       {display(item.confidence)} · {display(item.extractionState)}
                     </dd>
                   </div>

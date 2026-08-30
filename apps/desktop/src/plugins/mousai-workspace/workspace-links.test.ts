@@ -8,5 +8,8 @@ describe('Workspace deep links', () => {
     expect(projectWorkspaceLink('PROJECT 001', { workId: 'WORK/001', panel: 'history' })).toBe(
       '/workspace/projects?project=PROJECT+001&work=WORK%2F001&panel=history'
     )
+    expect(projectWorkspaceLink('PROJECT-001', { workId: 'WORK-001', panel: 'source' })).toBe(
+      '/workspace/projects?project=PROJECT-001&work=WORK-001&panel=source'
+    )
   })
 })
