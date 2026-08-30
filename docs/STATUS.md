@@ -1,7 +1,7 @@
 # Mousai Workspace Desktop status
 
 Updated: 2026-08-30
-Active branch: `feature/v1-s3-intake-foundation`
+Active branch: `feature/v1-s4-review-cost-foundation`
 
 ## Milestones
 
@@ -14,6 +14,7 @@ Active branch: `feature/v1-s3-intake-foundation`
 | V1-S1 M4–M10 content production | NOT CLAIMED              | Desktop product surfaces are implemented; real course/work deliverables remain subject to their own production and Mousai acceptance.                                                                                      |
 | V1-S2 Planning foundation       | COMPLETE / CONTRACT HOLD | Todo, Agenda, timeline, capacity, deterministic preview, review, night safety, history, and small-window surfaces are built. Live schedule writes await canonical contracts.                                               |
 | V1-S3 Intake foundation         | COMPLETE / CONTRACT HOLD | Unified multi-source inbox, source audit, duplicate evidence, intake filters, scope/notification/health shells, deep links, and responsive UX are built. Live policy/merge/notification actions await canonical contracts. |
+| V1-S4 Review/cost foundation    | COMPLETE / CONTRACT HOLD | Review, plan-vs-actual, AI contribution, cost/provider/security, after-work, project review, backup, release, and settings surfaces are built. Canonical ledgers/status contracts remain required.                         |
 
 This repository records Desktop engineering status only. It does not promote a course artifact or a WorkBuddy run to PASS.
 
@@ -37,12 +38,15 @@ This repository records Desktop engineering status only. It does not promote a c
 - Stable project/task/deliverable/history/skill deep links with honest not-found states.
 - Six-view Todo Center, Shanghai-time Agenda, Daily Timeline, deterministic capacity/scheduling preview, after-work brief, Night Safety, and Planning History.
 - Unified Inbox with source/project/DDL/waiting/search filters, exact-compatible source identity, current-fact intake audit, evidence-only duplicate state, intake scope/notification/health surfaces, and honest stale-link handling.
+- Review Center with today/week/month/project scopes, Plan vs Actual, evidence-bounded AI contribution, AI cost/provider/security shells, consolidated after-work preview, Project Review, Backup, Release Readiness, and read-only Settings.
 
 ## Current blocker
 
 Planning is read-only where canonical contracts are absent. Live schedule acceptance requires schedule blocks, fixed events, dependencies, planning history, night-safety evidence, and typed schedule mutations. Previous-revision artifact comparison still requires historical Manifest metadata. Desktop intentionally shows these facts as unavailable and does not infer them.
 
 Multi-source intake is also read-only where canonical contracts are absent. Source policy, ingest history, duplicate merge, notification state/actions, provider health, and archive/material-missing/decision triage require the typed contracts in `docs/V1-S3-CONTRACT-GAPS.md`.
+
+Review/cost/safety remains read-only where canonical contracts are absent. Usage/cost ledgers, provider credit, contribution assessment, review/timing history, security alerts, backup status, and system settings are specified in `docs/V1-S4-CONTRACT-GAPS.md`.
 
 ## Post-V1 candidates
 
