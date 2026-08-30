@@ -1,5 +1,6 @@
 import type { ProductionReview, Task, WorkspaceSnapshot } from './domain'
 import { planningDateKey } from './service-planning-calendar'
+import { type AiContributionState, buildAiContribution } from './service-review-cost'
 import { waitingReason } from './service-task-views'
 
 export type NightSafetyState = 'AUTO_OK' | 'BLOCKED' | 'HUMAN_REQUIRED'
@@ -34,7 +35,10 @@ export interface AfterWorkBrief {
   readonly risks: readonly BriefTask[]
   readonly tomorrow: readonly BriefTask[]
   readonly aiCompleted: readonly BriefTask[]
+  readonly aiContribution: Readonly<Record<AiContributionState, number>>
+  readonly apiCostToday: number | null
   readonly nightPlans: readonly NightPlanItem[]
+  readonly nightEstimatedCost: number | null
 }
 
 export interface PlanningHistoryItem {
@@ -122,17 +126,37 @@ export function buildAfterWorkBrief(snapshot: WorkspaceSnapshot, now = new Date(
   const aiCompleted: BriefTask[] = []
   const nightPlans: NightPlanItem[] = []
 
+  const contributionCounts: Record<AiContributionState, number> = {
+    HUMAN: 0,
+    AI_ASSISTED: 0,
+    AI_PRIMARY: 0,
+    AI_AUTONOMOUS: 0,
+    UNKNOWN: 0
+  }
+
+  const contributions = buildAiContribution(snapshot)
+  const contributionByWorkId = new Map(contributions.map(item => [item.workId, item]))
+
+  for (const contribution of contributions) {
+    contributionCounts[contribution.state] += 1
+  }
+
   for (const task of snapshot.tasks) {
     const review = reviewForTask(snapshot, task.id)
-    const updateDate = task.updatedAt ? planningDateKey(task.updatedAt) : null
     const deadlineDate = task.deadline ? planningDateKey(task.deadline) : null
     const blocker = waitingReason(task, review)
 
-    if (task.status === 'completed' && updateDate === today) {
-      const item = { task, note: '状态为已完成；时间依据最后更新时间' }
+    const acceptedToday =
+      review?.events.findLast(event => event.state === 'ACCEPTED' && event.at && planningDateKey(event.at) === today) ??
+      null
+
+    if (acceptedToday) {
+      const item = { task, note: `canonical acceptance ${acceptedToday.at}` }
       completedToday.push(item)
 
-      if (task.executor && AI_EXECUTOR.test(task.executor)) {
+      const contribution = contributionByWorkId.get(task.id)
+
+      if (contribution && ['AI_ASSISTED', 'AI_AUTONOMOUS', 'AI_PRIMARY'].includes(contribution.state)) {
         aiCompleted.push(item)
       }
     }
@@ -160,7 +184,17 @@ export function buildAfterWorkBrief(snapshot: WorkspaceSnapshot, now = new Date(
     }
   }
 
-  return { completedToday, delayed, risks, tomorrow: tomorrowTasks, aiCompleted, nightPlans }
+  return {
+    completedToday,
+    delayed,
+    risks,
+    tomorrow: tomorrowTasks,
+    aiCompleted,
+    aiContribution: contributionCounts,
+    apiCostToday: null,
+    nightPlans,
+    nightEstimatedCost: null
+  }
 }
 
 function productionEventLabel(state: string | null): string {

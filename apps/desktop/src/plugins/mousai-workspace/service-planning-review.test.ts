@@ -29,9 +29,9 @@ function task(overrides: Partial<Task> = {}): Task {
   }
 }
 
-function review(gateState: ProductionReview['gateState']): ProductionReview {
+function review(gateState: ProductionReview['gateState'], workId = 'WORK-1'): ProductionReview {
   return {
-    workId: 'WORK-1',
+    workId,
     authority: 'workbridge',
     gateState,
     missingInformation: [],
@@ -95,18 +95,30 @@ describe('after-work planning and safety', () => {
 
   it('builds an honest brief from canonical task facts', () => {
     const model = buildAfterWorkBrief(
-      snapshot([
-        task({ id: 'DONE', status: 'completed', updatedAt: '2026-08-29T10:00:00+08:00' }),
-        task({ id: 'LATE', deadline: '2026-08-28T18:00:00+08:00', executor: null }),
-        task({ id: 'ACTIVE' })
-      ]),
+      snapshot(
+        [
+          task({ id: 'DONE', status: 'completed', updatedAt: '2026-08-29T10:00:00+08:00' }),
+          task({ id: 'LATE', deadline: '2026-08-28T18:00:00+08:00', executor: null }),
+          task({ id: 'ACTIVE' })
+        ],
+        [review('ACCEPTED', 'DONE')]
+      ),
       new Date('2026-08-29T04:00:00Z')
     )
 
     expect(model.completedToday.map(item => item.task.id)).toEqual(['DONE'])
-    expect(model.aiCompleted.map(item => item.task.id)).toEqual(['DONE'])
+    expect(model.aiCompleted).toEqual([])
     expect(model.delayed.map(item => item.task.id)).toEqual(['LATE'])
     expect(model.nightPlans[0]?.safety.state).toBe('HUMAN_REQUIRED')
+  })
+
+  it('does not use updatedAt as completedAt without an accepted event', () => {
+    const model = buildAfterWorkBrief(
+      snapshot([task({ status: 'completed', updatedAt: '2026-08-29T10:00:00+08:00' })]),
+      new Date('2026-08-29T04:00:00Z')
+    )
+
+    expect(model.completedToday).toEqual([])
   })
 
   it('uses accepted production events for actual completion and leaves deadline history unset', () => {

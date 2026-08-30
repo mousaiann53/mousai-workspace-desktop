@@ -21,6 +21,7 @@ import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import type { Deliverable, ProductionReview, Project, Task } from './domain'
 import { ProductionHistory } from './production-history'
 import { ProductionReviewCard } from './production-review'
+import { ProjectReviewPanel } from './review-cost-center'
 import type { LocalDeliverableAccess } from './service-local-deliverables'
 import type { WorkspaceProductionActionTransport } from './service-production-actions'
 import { projectDetailModel, type TimelineLayerModel } from './service-project-detail'
@@ -880,6 +881,9 @@ export function ProjectDetail({
                 ))}
               </ul>
             )}
+          </Section>
+          <Section title="项目复盘">
+            <ProjectReviewPanel project={project} snapshot={result.data.snapshot} />
           </Section>
         </div>
 

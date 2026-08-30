@@ -6,10 +6,10 @@ import { Dashboard } from './dashboard'
 import type { IntakeSurface } from './intake-contracts'
 import { IntakeAuxiliarySurface, IntakeSurfaceNav } from './intake-operations'
 import { PlanningCalendar } from './planning-calendar'
-import { PlanningReview } from './planning-review'
 import { ProjectDetail } from './project-detail'
 import { ProjectGallery } from './project-gallery'
 import { ResourceArchiveView } from './resource-archive'
+import { ReviewCostCenter, type ReviewFoundationSurface } from './review-cost-center'
 import { createLocalDeliverableAccess, type LocalDeliverableAccess } from './service-local-deliverables'
 import type { WorkspaceProductionActionTransport } from './service-production-actions'
 import { createTaskCreateDraftStore, type TaskCreateDraftStore } from './service-task-create-draft'
@@ -156,12 +156,30 @@ function CalendarPage({ transport }: { transport: WorkspaceTransport }) {
 
 function ReviewPage({ transport }: { transport: WorkspaceTransport }) {
   const gatewayState = useValue(host.state.gateway)
+  const [searchParams] = useSearchParams()
+  const surfaceValue = searchParams.get('surface')
+
+  const surface: ReviewFoundationSurface = [
+    'backup',
+    'brief',
+    'cost',
+    'providers',
+    'release',
+    'security',
+    'settings'
+  ].includes(surfaceValue ?? '')
+    ? (surfaceValue as ReviewFoundationSurface)
+    : 'review'
 
   return (
     <WorkspacePage eyebrow="WORKSPACE" title="复盘">
-      <PlanningReview
+      <ReviewCostCenter
         gatewayState={gatewayState}
+        onNavigate={next =>
+          navigateWorkspace(next === 'review' ? '/workspace/review' : `/workspace/review?surface=${next}`)
+        }
         onOpenTask={task => navigateWorkspace(`/workspace/todos?work=${encodeURIComponent(task.id)}`)}
+        surface={surface}
         transport={transport}
       />
     </WorkspacePage>

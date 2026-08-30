@@ -158,6 +158,21 @@ export function PlanningReview({
       <NightPlan items={brief.nightPlans} />
 
       <section className="rounded-lg border border-(--ui-stroke-quaternary) bg-(--ui-sidebar-surface-background) p-4">
+        <h2 className="text-sm font-medium">AI 贡献与成本</h2>
+        <div className="mt-3 grid gap-3 text-xs sm:grid-cols-2 lg:grid-cols-4">
+          <div>人工完成：{brief.aiContribution.HUMAN || '未设置'}</div>
+          <div>AI 辅助：{brief.aiContribution.AI_ASSISTED || '未设置'}</div>
+          <div>AI 主做：{brief.aiContribution.AI_PRIMARY || '未设置'}</div>
+          <div>AI 全自动：{brief.aiContribution.AI_AUTONOMOUS || '未设置'}</div>
+          <div>今日 API 成本：{brief.apiCostToday ?? '未设置'}</div>
+          <div>今晚预计新增成本：{brief.nightEstimatedCost ?? '未设置'}</div>
+        </div>
+        <p className="mt-3 text-[0.6875rem] text-(--ui-text-quaternary)">
+          成本仅接受 canonical usage ledger；没有数据时不显示 0 元。
+        </p>
+      </section>
+
+      <section className="rounded-lg border border-(--ui-stroke-quaternary) bg-(--ui-sidebar-surface-background) p-4">
         <h2 className="text-sm font-medium">Planning History</h2>
         <p className="mt-1 text-[0.6875rem] text-(--ui-text-quaternary)">
           Production events 为 append-only；原始 DDL 与改期次数等待正式 planning history contract。
