@@ -58,8 +58,6 @@ describe('UnifiedInbox', () => {
     fireEvent.click(screen.getByRole('button', { name: '来源记录' }))
     expect(onOpenTask).toHaveBeenCalledWith('WORK-FEISHU')
     expect(onOpenSource).toHaveBeenCalledWith('WORK-FEISHU')
-    expect(
-      (screen.getByRole('button', { name: '合并' }) as HTMLButtonElement).disabled,
-    ).toBe(true)
+    expect((screen.getByRole('button', { name: '合并' }) as HTMLButtonElement).disabled).toBe(true)
   })
 })
