@@ -160,10 +160,25 @@ function ProjectsPage({
 
 function TasksPage({ draftStore, transport }: { draftStore: TaskCreateDraftStore; transport: WorkspaceTransport }) {
   const gatewayState = useValue(host.state.gateway)
+  const [searchParams] = useSearchParams()
+  const focusWorkId = searchParams.get('work')
 
   return (
     <WorkspacePage eyebrow="WORKSPACE" title="待办">
-      <TaskCenter draftStore={draftStore} gatewayState={gatewayState} transport={transport} />
+      <TaskCenter
+        draftStore={draftStore}
+        focusWorkId={focusWorkId}
+        gatewayState={gatewayState}
+        onNavigateTask={workId =>
+          navigateWorkspace(workId ? `/workspace/todos?work=${encodeURIComponent(workId)}` : '/workspace/todos')
+        }
+        onOpenDeliverable={(workId, projectId) => {
+          if (projectId) {
+            navigateWorkspace(projectWorkspaceLink(projectId, { workId, panel: 'deliverable' }))
+          }
+        }}
+        transport={transport}
+      />
     </WorkspacePage>
   )
 }

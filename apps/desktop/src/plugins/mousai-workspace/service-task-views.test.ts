@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import type { Task } from './domain'
+import type { ProductionReview, Task } from './domain'
 import { createLocalDeliverableAccess, localOutboxPath } from './service-local-deliverables'
 import { tasksForView } from './service-task-views'
 
@@ -37,6 +37,8 @@ describe('task read views', () => {
     task('WORK-TODAY', 'classified', '2026-08-28T16:00:00Z'),
     task('WORK-RECENT', 'review', '2026-09-02T16:00:00Z'),
     task('WORK-LATER', 'classified', '2026-09-20T16:00:00Z'),
+    task('WORK-WAITING', 'waiting_local', null),
+    task('WORK-SHELVED', 'archived', null),
     task('WORK-DONE', 'completed', '2026-08-28T16:00:00Z')
   ]
 
@@ -44,6 +46,30 @@ describe('task read views', () => {
     expect(tasksForView(tasks, 'inbox', now).map(item => item.id)).toEqual(['WORK-INBOX-NO-DDL'])
     expect(tasksForView(tasks, 'today', now).map(item => item.id)).toEqual(['WORK-TODAY'])
     expect(tasksForView(tasks, 'recent', now).map(item => item.id)).toEqual(['WORK-RECENT'])
+    expect(tasksForView(tasks, 'waiting', now).map(item => item.id)).toEqual(['WORK-RECENT', 'WORK-WAITING'])
+    expect(tasksForView(tasks, 'shelved', now).map(item => item.id)).toEqual(['WORK-SHELVED'])
+    expect(tasksForView(tasks, 'completed', now).map(item => item.id)).toEqual(['WORK-DONE'])
+  })
+
+  it('uses the canonical production gate for waiting without changing task state', () => {
+    const review: ProductionReview = {
+      workId: 'WORK-LATER',
+      authority: 'workbridge',
+      gateState: 'MATERIAL_MISSING',
+      missingInformation: ['正式资料'],
+      decisionRequired: false,
+      approvedScope: null,
+      scopeHistory: [],
+      revision: null,
+      manifestVersion: null,
+      acceptance: null,
+      bundleMeta: null,
+      events: [],
+      source: { system: 'workbridge', recordId: 'WORK-LATER' }
+    }
+
+    expect(tasksForView(tasks, 'waiting', now, [review]).map(item => item.id)).toContain('WORK-LATER')
+    expect(tasks.find(item => item.id === 'WORK-LATER')?.status).toBe('classified')
   })
 })
 

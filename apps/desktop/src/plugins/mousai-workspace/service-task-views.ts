@@ -1,8 +1,16 @@
-import type { Task } from './domain'
+import type { ProductionReview, Task } from './domain'
 
-export type TaskReadView = 'inbox' | 'recent' | 'today'
+export type TaskReadView = 'completed' | 'inbox' | 'recent' | 'shelved' | 'today' | 'waiting'
 
 const TERMINAL = new Set<Task['status']>(['archived', 'completed'])
+const WAITING = new Set<Task['status']>(['decision_required', 'material_missing', 'review', 'waiting_local'])
+
+const WAITING_GATES = new Set<ProductionReview['gateState']>([
+  'DECISION_REQUIRED',
+  'MATERIAL_MISSING',
+  'WAITING_ACCEPTANCE',
+  'WAITING_HUMAN_APPROVAL'
+])
 
 function shanghaiDateKey(value: Date): string {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -28,13 +36,57 @@ function deadlineKey(task: Task): string | null {
   return task.deadline ? shanghaiDateKey(new Date(task.deadline)) : null
 }
 
-export function tasksForView(tasks: readonly Task[], view: TaskReadView, now = new Date()): readonly Task[] {
+export function waitingReason(task: Task, review: ProductionReview | null): string | null {
+  if (review?.gateState === 'MATERIAL_MISSING' || task.status === 'material_missing') {
+    return review?.missingInformation.length ? review.missingInformation.join('；') : '资料缺失'
+  }
+
+  if (review?.gateState === 'DECISION_REQUIRED' || task.status === 'decision_required') {
+    return review?.bundleMeta?.decisionNote ?? '需要 Mousai 决策'
+  }
+
+  if (review?.gateState === 'WAITING_HUMAN_APPROVAL') {
+    return '等待 Mousai 批准 Scope'
+  }
+
+  if (review?.gateState === 'WAITING_ACCEPTANCE' || task.status === 'review') {
+    return '等待 Mousai 人工验收'
+  }
+
+  if (task.status === 'waiting_local') {
+    return '等待本机领取或处理'
+  }
+
+  return null
+}
+
+export function tasksForView(
+  tasks: readonly Task[],
+  view: TaskReadView,
+  now = new Date(),
+  reviews: readonly ProductionReview[] = []
+): readonly Task[] {
   const today = shanghaiDateKey(now)
   const recentEnd = addDays(today, 7)
+  const reviewsByWorkId = new Map(reviews.map(review => [review.workId, review]))
 
   const selected = tasks.filter(task => {
     if (view === 'inbox') {
       return task.status === 'inbox'
+    }
+
+    if (view === 'waiting') {
+      const review = reviewsByWorkId.get(task.id)
+
+      return WAITING.has(task.status) || (review ? WAITING_GATES.has(review.gateState) : false)
+    }
+
+    if (view === 'shelved') {
+      return task.status === 'archived'
+    }
+
+    if (view === 'completed') {
+      return task.status === 'completed'
     }
 
     if (TERMINAL.has(task.status)) {

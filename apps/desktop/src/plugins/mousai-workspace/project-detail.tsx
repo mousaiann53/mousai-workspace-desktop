@@ -18,7 +18,8 @@ import {
 } from '@hermes/plugin-sdk'
 import { type ReactNode, useEffect, useMemo, useState } from 'react'
 
-import type { Deliverable, Project, Task } from './domain'
+import type { Deliverable, ProductionReview, Project, Task } from './domain'
+import { ProductionHistory } from './production-history'
 import { ProductionReviewCard } from './production-review'
 import type { LocalDeliverableAccess } from './service-local-deliverables'
 import type { WorkspaceProductionActionTransport } from './service-production-actions'
@@ -181,7 +182,7 @@ function TimelineLayer({ layer }: { layer: TimelineLayerModel }) {
   )
 }
 
-function TaskInspector({
+export function TaskInspector({
   deliverables,
   mutationTransport,
   onClose,
@@ -191,6 +192,7 @@ function TaskInspector({
   open,
   project,
   projects,
+  review,
   task,
   tasks
 }: {
@@ -201,8 +203,9 @@ function TaskInspector({
   onRefresh: () => Promise<unknown>
   onSelectTask: (taskId: string) => void
   open: boolean
-  project: Project
+  project: Project | null
   projects: readonly Project[]
+  review: ProductionReview | null
   task: Task | null
   tasks: readonly Task[]
 }) {
@@ -490,7 +493,7 @@ function TaskInspector({
               ) : (
                 <>
                   <dl className="grid grid-cols-2 gap-x-4 gap-y-4 pt-3">
-                    <Fact label="项目" value={project.name} />
+                    <Fact label="项目" value={project?.name ?? task.projectRef} />
                     <Fact label="类型" value={task.typeLabel} />
                     <Fact label="状态" value={task.statusLabel ?? TASK_STATUS_LABELS[task.status]} />
                     <Fact label="优先级" value={task.priorityLabel ?? PRIORITY_LABELS[task.priority]} />
@@ -510,6 +513,26 @@ function TaskInspector({
                       label="Deliverable relation"
                       value={taskDeliverables.length ? taskDeliverables.map(item => item.filename).join('、') : null}
                     />
+                  </div>
+                  <div className="mt-5 space-y-4 border-t border-(--ui-stroke-quaternary) pt-4">
+                    <h3 className="text-xs font-medium">Production summary</h3>
+                    <dl className="grid grid-cols-2 gap-x-4 gap-y-4">
+                      <Fact label="Production gate" value={review?.gateState ?? null} />
+                      <Fact
+                        label="Approved scope"
+                        value={review?.approvedScope ? `v${review.approvedScope.version}` : null}
+                      />
+                      <Fact label="Manifest version" value={review?.manifestVersion ?? null} />
+                      <Fact label="需要决策" value={review?.decisionRequired ?? null} />
+                    </dl>
+                    <Fact
+                      label="资料缺失"
+                      value={review?.missingInformation.length ? review.missingInformation.join('；') : null}
+                    />
+                  </div>
+                  <div className="mt-5 border-t border-(--ui-stroke-quaternary) pt-4">
+                    <h3 className="mb-3 text-xs font-medium">History</h3>
+                    <ProductionHistory review={review} />
                   </div>
                   <div className="mt-5 flex flex-wrap gap-2 border-t border-(--ui-stroke-quaternary) pt-4">
                     {taskDeliverables.length > 0 && (
@@ -851,6 +874,7 @@ export function ProjectDetail({
         open={selectedTask !== null}
         project={project}
         projects={result.data?.snapshot.projects ?? []}
+        review={model.productionReviewItems.find(item => item.task.id === selectedTask?.id)?.review ?? null}
         task={selectedTask}
         tasks={model.tasks}
       />

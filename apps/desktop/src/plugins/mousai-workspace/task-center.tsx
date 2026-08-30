@@ -1,16 +1,20 @@
 import { Button, Codicon, Input, Textarea, useQuery } from '@hermes/plugin-sdk'
-import { type FormEvent, useMemo, useRef, useState } from 'react'
+import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 
 import type { Task } from './domain'
+import { TaskInspector } from './project-detail'
 import type { DurableTaskCreateDraft, TaskCreateDraftStore } from './service-task-create-draft'
 import type { WorkspaceTaskMutationTransport } from './service-task-mutation'
-import { type TaskReadView, tasksForView } from './service-task-views'
+import { type TaskReadView, tasksForView, waitingReason } from './service-task-views'
 import { readWorkspaceSnapshot, type WorkspaceReadTransport } from './service-workspace-read'
 
 const VIEWS: readonly { id: TaskReadView; label: string }[] = [
   { id: 'inbox', label: '收件箱' },
   { id: 'today', label: '今日' },
-  { id: 'recent', label: '近期' }
+  { id: 'recent', label: '近期' },
+  { id: 'waiting', label: '等待中' },
+  { id: 'shelved', label: '搁置' },
+  { id: 'completed', label: '已完成' }
 ]
 
 const STATUS_LABEL: Readonly<Record<Task['status'], string>> = {
@@ -44,11 +48,17 @@ function deadlineLabel(value: string | null): string {
 
 export function TaskCenter({
   draftStore,
+  focusWorkId,
   gatewayState,
+  onNavigateTask,
+  onOpenDeliverable,
   transport
 }: {
   draftStore: TaskCreateDraftStore
+  focusWorkId?: string | null
   gatewayState: string
+  onNavigateTask?: (workId: string | null) => void
+  onOpenDeliverable?: (workId: string, projectId: string | null) => void
   transport: WorkspaceReadTransport & WorkspaceTaskMutationTransport
 }) {
   const initialDraft = useRef(draftStore.load()).current
@@ -62,6 +72,7 @@ export function TaskCenter({
   const [nextAction, setNextAction] = useState(initialDraft?.task.nextAction ?? '')
   const [durableDraft, setDurableDraft] = useState<DurableTaskCreateDraft | null>(initialDraft)
   const [pending, setPending] = useState(false)
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(focusWorkId ?? null)
 
   const [message, setMessage] = useState<string | null>(
     initialDraft ? '检测到未确认结果的创建请求；请使用同一请求安全重试。' : null
@@ -77,9 +88,12 @@ export function TaskCenter({
   })
 
   const tasks = useMemo(
-    () => tasksForView(result.data?.snapshot.tasks ?? [], view),
-    [result.data?.snapshot.tasks, view]
+    () =>
+      tasksForView(result.data?.snapshot.tasks ?? [], view, new Date(), result.data?.snapshot.productionReviews ?? []),
+    [result.data?.snapshot.productionReviews, result.data?.snapshot.tasks, view]
   )
+
+  useEffect(() => setSelectedTaskId(focusWorkId ?? null), [focusWorkId])
 
   async function submit(event: FormEvent) {
     event.preventDefault()
@@ -261,6 +275,12 @@ export function TaskCenter({
 
       {message && <p className="text-xs text-(--ui-text-tertiary)">{message}</p>}
 
+      {view === 'shelved' && (
+        <p className="text-xs text-(--ui-text-tertiary)">
+          兼容规则：当前 backend 没有独立“搁置”状态，本页只映射正式“已归档”，不会创建新 task state。
+        </p>
+      )}
+
       {tasks.length === 0 ? (
         <div className="rounded-lg border border-(--ui-stroke-quaternary) p-6 text-center text-xs text-(--ui-text-tertiary)">
           当前视图没有任务。无 DDL 的任务不会被补入“今日”或“近期”。
@@ -268,23 +288,111 @@ export function TaskCenter({
       ) : (
         <ul className="space-y-2">
           {tasks.map(task => (
-            <li className="rounded-lg border border-(--ui-stroke-quaternary) p-3" key={task.id}>
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="text-sm font-medium">{task.title}</div>
-                  <div className="mt-1 text-[0.6875rem] text-(--ui-text-quaternary)">{task.id}</div>
+            <li key={task.id}>
+              <button
+                aria-label={`打开任务：${task.title}`}
+                className="w-full rounded-lg border border-(--ui-stroke-quaternary) p-3 text-left hover:bg-(--ui-hover-overlay)"
+                onClick={() => {
+                  setSelectedTaskId(task.id)
+                  onNavigateTask?.(task.id)
+                }}
+                type="button"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-medium">{task.title}</div>
+                    <div className="mt-1 text-[0.6875rem] text-(--ui-text-quaternary)">{task.id}</div>
+                  </div>
+                  <span className="shrink-0 text-xs text-(--ui-text-tertiary)">{STATUS_LABEL[task.status]}</span>
                 </div>
-                <span className="text-xs text-(--ui-text-tertiary)">{STATUS_LABEL[task.status]}</span>
-              </div>
-              <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-(--ui-text-tertiary)">
-                <span>{deadlineLabel(task.deadline)}</span>
-                <span>{task.projectRef ?? '项目未设置'}</span>
-                <span>{task.nextAction ?? '下一步未设置'}</span>
-              </div>
+                <dl className="mt-3 grid gap-x-5 gap-y-2 text-xs sm:grid-cols-2 lg:grid-cols-4">
+                  <div>
+                    <dt className="text-(--ui-text-quaternary)">项目</dt>
+                    <dd className="mt-0.5 truncate text-(--ui-text-secondary)">
+                      {result.data.snapshot.projects.find(
+                        project => project.id === task.projectRef || project.name === task.projectRef
+                      )?.name ??
+                        task.projectRef ??
+                        '未设置'}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-(--ui-text-quaternary)">优先级 / DDL</dt>
+                    <dd className="mt-0.5 text-(--ui-text-secondary)">
+                      {task.priorityLabel ?? task.priority} · {deadlineLabel(task.deadline)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-(--ui-text-quaternary)">Production gate</dt>
+                    <dd className="mt-0.5 break-words text-(--ui-text-secondary)">
+                      {result.data.snapshot.productionReviews.find(review => review.workId === task.id)?.gateState ??
+                        '未设置'}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-(--ui-text-quaternary)">执行者 / 来源</dt>
+                    <dd className="mt-0.5 break-words text-(--ui-text-secondary)">
+                      {task.executor ?? '未设置'} · {task.origin ?? task.source.system}
+                    </dd>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <dt className="text-(--ui-text-quaternary)">下一步</dt>
+                    <dd className="mt-0.5 line-clamp-2 text-(--ui-text-secondary)">{task.nextAction ?? '未设置'}</dd>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <dt className="text-(--ui-text-quaternary)">等待原因</dt>
+                    <dd className="mt-0.5 line-clamp-2 text-(--ui-text-secondary)">
+                      {waitingReason(
+                        task,
+                        result.data.snapshot.productionReviews.find(review => review.workId === task.id) ?? null
+                      ) ?? '未设置'}
+                    </dd>
+                  </div>
+                </dl>
+              </button>
             </li>
           ))}
         </ul>
       )}
+
+      <TaskInspector
+        deliverables={result.data.snapshot.deliverables}
+        mutationTransport={transport}
+        onClose={() => {
+          setSelectedTaskId(null)
+          onNavigateTask?.(null)
+        }}
+        onOpenDeliverable={workId => {
+          const selected = result.data.snapshot.tasks.find(task => task.id === workId)
+
+          const project = result.data.snapshot.projects.find(
+            item => item.id === selected?.projectRef || item.name === selected?.projectRef
+          )
+
+          onOpenDeliverable?.(workId, project?.id ?? null)
+        }}
+        onRefresh={() => result.refetch()}
+        onSelectTask={taskId => {
+          setSelectedTaskId(taskId)
+          onNavigateTask?.(taskId)
+        }}
+        open={Boolean(selectedTaskId)}
+        project={
+          result.data.snapshot.projects.find(project => {
+            const selected = result.data.snapshot.tasks.find(task => task.id === selectedTaskId)
+
+            return project.id === selected?.projectRef || project.name === selected?.projectRef
+          }) ?? null
+        }
+        projects={result.data.snapshot.projects}
+        review={result.data.snapshot.productionReviews.find(review => review.workId === selectedTaskId) ?? null}
+        task={result.data.snapshot.tasks.find(task => task.id === selectedTaskId) ?? null}
+        tasks={result.data.snapshot.tasks.filter(task => {
+          const selected = result.data.snapshot.tasks.find(item => item.id === selectedTaskId)
+
+          return selected?.projectRef ? task.projectRef === selected.projectRef : task.id === selectedTaskId
+        })}
+      />
     </div>
   )
 }
