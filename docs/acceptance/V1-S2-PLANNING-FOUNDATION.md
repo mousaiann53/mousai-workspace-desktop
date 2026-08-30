@@ -34,7 +34,18 @@ This record covers Desktop construction only. It does not claim overall V1-S2 ac
 
 ## Validation
 
-Package-level focused suites, Desktop typecheck, Workspace ESLint/Prettier, Secret/IPC scans, and `git diff --check` pass. Final full Workspace suite and Desktop production build are recorded after the final checkpoint.
+- Package-level focused suites: PASS.
+- Final Workspace suite: 23 test files / 161 tests PASS.
+- Desktop TypeScript typecheck: PASS.
+- Workspace ESLint: PASS.
+- Workspace Prettier check: PASS.
+- `git diff --check`: PASS.
+- Secret-value scan: 0 hits. One earlier broad text match was the phrase `bearer token` in this security documentation, not a credential.
+- Broad IPC/shell scan: 0 hits.
+- Desktop production build at source HEAD `19912815b3e280a04d31b65df53ae9bc355dfe5e`: PASS; 15,165 modules transformed, Electron main/preload bundled, native dependencies staged, and `assert-dist-built` passed.
+- Windows pack: intentionally not run because packaging configuration did not change.
+
+The build emitted existing upstream warnings for future Vite config compatibility, deprecated `advancedChunks`, and an ineffective dynamic import. None is introduced by the V1-S2 Workspace package or blocks the production build.
 
 ## True contract blockers
 
