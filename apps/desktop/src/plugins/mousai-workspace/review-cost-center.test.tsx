@@ -46,4 +46,38 @@ describe('ReviewCostCenter', () => {
     fireEvent.click(screen.getByRole('button', { name: '安全中心' }))
     expect(onNavigate).toHaveBeenCalledWith('security')
   })
+
+  it.each([
+    ['providers', 'Provider 状态 unavailable'],
+    ['security', 'AI 用量安全告警 unavailable'],
+    ['backup', '备份与恢复状态 unavailable'],
+    ['settings', '设置只读 / unavailable']
+  ] as const)('keeps %s honest when its canonical contract is absent', (surface, message) => {
+    renderCenter(surface)
+    expect(screen.getByText(message)).toBeTruthy()
+  })
+
+  it('renders an honest insufficient-history review state from an empty canonical snapshot', async () => {
+    renderCenter('review')
+    expect(await screen.findByText('历史数据不足以统计')).toBeTruthy()
+    expect(screen.getAllByText('未设置').length).toBeGreaterThan(0)
+  })
+
+  it('renders a bounded error state without stale or demo facts', async () => {
+    const failingTransport: WorkspaceReadTransport = {
+      scope: 'review-cost-error',
+      readSnapshot: vi.fn(async () => {
+        throw new Error('read failed')
+      })
+    }
+
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <ReviewCostCenter gatewayState="open" onNavigate={vi.fn()} surface="review" transport={failingTransport} />
+      </QueryClientProvider>
+    )
+
+    expect(await screen.findByText('复盘读取失败')).toBeTruthy()
+    expect(screen.queryByText('¥0')).toBeNull()
+  })
 })
