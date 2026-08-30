@@ -5,7 +5,7 @@ import path from 'node:path'
 
 import { test } from 'vitest'
 
-import { clearStaleGitLocks, LOCK_NAMES, STALE_LOCK_MIN_AGE_MS } from './gitlock'
+import { clearStaleGitLocks, gitProcessRunning, LOCK_NAMES, STALE_LOCK_MIN_AGE_MS } from './gitlock'
 
 function makeRepo(): string {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gitlock-test-'))
@@ -25,6 +25,19 @@ function writeLock(root: string, name: string, ageMs: number): string {
 
 const noGit = async () => false
 const gitRunning = async () => true
+
+test('Windows git-process probe hides the tasklist console', async () => {
+  let call: any
+
+  const execFileFn: any = (command, args, options, callback) => {
+    call = { command, args, options }
+    callback(null, '"Image Name","PID"\n"git.exe","123"')
+  }
+
+  assert.equal(await gitProcessRunning({ execFileFn, isWindows: true }), true)
+  assert.equal(call.command, 'tasklist')
+  assert.equal(call.options.windowsHide, true)
+})
 
 test('stale shallow.lock older than min age is removed', async () => {
   const root = makeRepo()

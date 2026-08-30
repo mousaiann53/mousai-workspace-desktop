@@ -523,8 +523,10 @@ test('no-mux: forward spawns a persistent -N -L child; cancel + close kill it', 
   await new Promise<void>(r => srv.listen(0, '127.0.0.1', () => r()))
   const localPort = (srv.address() as any).port
   const tunnels: any[] = []
+  const spawnOptions: any[] = []
 
-  const spawnFn: any = (_cmd, args) => {
+  const spawnFn: any = (_cmd, args, options) => {
+    spawnOptions.push(options)
     const child: any = new EventEmitter()
     child.stderr = new EventEmitter()
     child.exitCode = null
@@ -554,11 +556,16 @@ test('no-mux: forward spawns a persistent -N -L child; cancel + close kill it', 
     return child
   }
 
-  const conn = new SshConnection({ host: 'box', user: 'me' }, { spawnFn, mux: false })
+  const conn = new SshConnection(
+    { host: 'box', user: 'me' },
+    { spawnFn, mux: false, isWindows: true }
+  )
+
   await conn.forward(localPort, 9119)
   assert.equal(tunnels.length, 1, 'one persistent tunnel child')
   assert.ok(tunnels[0].args.includes('-L'), 'tunnel child carries -L spec')
   assert.ok(!tunnels[0].args.some(a => /ControlPath/.test(a)))
+  assert.ok(spawnOptions.every(options => options.windowsHide === true), 'every Windows ssh child stays hidden')
 
   await conn.cancelForward(localPort, 9119)
   assert.ok(tunnels[0].child._killed, 'cancelForward kills the tunnel child')
@@ -795,6 +802,26 @@ test('runSsh delivers stdinData to the child and does not log it', async () => {
 
   await runSsh(['host', 'cat'], { timeoutMs: 5000, spawnFn, stdinData: 'secret-token-value' })
   assert.equal(stdinWritten, 'secret-token-value', 'stdinData must be written to child.stdin')
+})
+
+test('runSsh hides its console on Windows', async () => {
+  let spawnOptions: any
+
+  const spawnFn: any = (_cmd, _args, opts) => {
+    spawnOptions = opts
+
+    const child: any = new EventEmitter()
+    child.stdout = new EventEmitter()
+    child.stderr = new EventEmitter()
+
+    child.kill = () => {}
+    process.nextTick(() => child.emit('close', 0))
+
+    return child
+  }
+
+  await runSsh(['host', 'exit 0'], { timeoutMs: 5000, spawnFn, isWindows: true })
+  assert.equal(spawnOptions.windowsHide, true)
 })
 
 test('open() rejects a control-dir that is a symlink', async () => {

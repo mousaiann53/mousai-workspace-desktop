@@ -11,6 +11,8 @@ import { execFile } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 
+import { hiddenWindowsChildOptions } from './windows-child-options'
+
 // Lock files younger than this are presumed live (a fetch is in flight) and
 // are never removed. git lock files live for seconds under normal operation;
 // anything older than 10 minutes is abandoned.
@@ -19,15 +21,20 @@ export const STALE_LOCK_MIN_AGE_MS = 10 * 60 * 1000
 // Same self-healable lock set as hermes_cli/gitlock.py.
 export const LOCK_NAMES = ['shallow.lock', 'index.lock', 'HEAD.lock', 'MERGE_HEAD.lock']
 
-function gitProcessRunning(): Promise<boolean> {
+export function gitProcessRunning(
+  {
+    execFileFn = execFile,
+    isWindows = process.platform === 'win32'
+  }: { execFileFn?: typeof execFile; isWindows?: boolean } = {}
+): Promise<boolean> {
   return new Promise(resolve => {
     const [cmd, args] =
-      process.platform === 'win32'
+      isWindows
         ? ['tasklist', ['/FI', 'IMAGENAME eq git.exe', '/FO', 'CSV']]
         : ['pgrep', ['-x', 'git']]
 
-    execFile(cmd, args, { timeout: 10_000 }, (error, stdout) => {
-      if (process.platform === 'win32') {
+    execFileFn(cmd, args, hiddenWindowsChildOptions({ timeout: 10_000 }, isWindows), (error, stdout) => {
+      if (isWindows) {
         // tasklist exits 0 either way; presence is signaled in stdout.
         resolve(Boolean(stdout && stdout.toLowerCase().includes('git.exe')))
 

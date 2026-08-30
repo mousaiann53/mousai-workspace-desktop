@@ -36,6 +36,8 @@ import net from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
 
+import { hiddenWindowsChildOptions } from './windows-child-options'
+
 const DEFAULT_CONNECT_TIMEOUT_MS = 15_000
 const DEFAULT_EXEC_TIMEOUT_MS = 20_000
 const DEFAULT_FORWARD_TIMEOUT_MS = 15_000
@@ -396,7 +398,17 @@ function sshErrorMessage(kind, conn, stderr?) {
 
 // Resolves { code, stdout, stderr }. On timeout the child is SIGKILLed and the
 // promise rejects with err.kind = TIMEOUT. `spawnFn` is injectable for tests.
-function runSsh(args, { timeoutMs, spawnFn = spawn, stdin = 'ignore', stdinData, signal }: any = {}) {
+function runSsh(
+  args,
+  {
+    timeoutMs,
+    spawnFn = spawn,
+    stdin = 'ignore',
+    stdinData,
+    signal,
+    isWindows = process.platform === 'win32'
+  }: any = {}
+) {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) {
       const error: any = new Error('SSH operation was cancelled.')
@@ -410,7 +422,14 @@ function runSsh(args, { timeoutMs, spawnFn = spawn, stdin = 'ignore', stdinData,
     let child
 
     try {
-      child = spawnFn('ssh', args, { stdio: [useStdinPipe ? 'pipe' : 'ignore', 'pipe', 'pipe'] })
+      child = spawnFn(
+        'ssh',
+        args,
+        hiddenWindowsChildOptions(
+          { stdio: [useStdinPipe ? 'pipe' : 'ignore', 'pipe', 'pipe'] },
+          isWindows
+        )
+      )
     } catch (error) {
       reject(error)
 
@@ -582,7 +601,10 @@ class SshConnection {
       : ''
     this._tunnels = new Map()
 
-    this._spawnFn = opts.spawnFn || spawn
+    const rawSpawnFn = opts.spawnFn || spawn
+    const isWindows = opts.isWindows ?? process.platform === 'win32'
+    this._spawnFn = (command, args, options) =>
+      rawSpawnFn(command, args, hiddenWindowsChildOptions(options, isWindows))
 
     this._log = typeof opts.rememberLog === 'function' ? opts.rememberLog : () => {}
     this._connectTimeoutMs = opts.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS
