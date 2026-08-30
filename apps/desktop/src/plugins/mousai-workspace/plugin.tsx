@@ -181,7 +181,9 @@ function ProjectsPage({
   const workId = searchParams.get('work')
   const panelValue = searchParams.get('panel')
 
-  const panel: WorkspaceFocusPanel | null = ['deliverable', 'history', 'skill', 'task'].includes(panelValue ?? '')
+  const panel: WorkspaceFocusPanel | null = ['deliverable', 'history', 'skill', 'source', 'task'].includes(
+    panelValue ?? ''
+  )
     ? (panelValue as WorkspaceFocusPanel)
     : null
 
@@ -217,15 +219,22 @@ function TasksPage({ draftStore, transport }: { draftStore: TaskCreateDraftStore
   const gatewayState = useValue(host.state.gateway)
   const [searchParams] = useSearchParams()
   const focusWorkId = searchParams.get('work')
+  const panelValue = searchParams.get('panel')
+  const focusPanel = panelValue === 'source' ? 'source' : 'task'
 
   return (
     <WorkspacePage eyebrow="WORKSPACE" title="待办">
       <TaskCenter
         draftStore={draftStore}
+        focusPanel={focusPanel}
         focusWorkId={focusWorkId}
         gatewayState={gatewayState}
-        onNavigateTask={workId =>
-          navigateWorkspace(workId ? `/workspace/todos?work=${encodeURIComponent(workId)}` : '/workspace/todos')
+        onNavigateTask={(workId, panel = 'task') =>
+          navigateWorkspace(
+            workId
+              ? `/workspace/todos?work=${encodeURIComponent(workId)}&panel=${encodeURIComponent(panel)}`
+              : '/workspace/todos'
+          )
         }
         onOpenDeliverable={(workId, projectId) => {
           if (projectId) {

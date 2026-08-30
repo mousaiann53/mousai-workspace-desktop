@@ -140,7 +140,7 @@ describe('ProjectDetail', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Phase 1C Base 闭环测试/ }))
     expect(await screen.findByText('WORK-001 · 受控任务事实')).toBeTruthy()
-    expect(screen.getByText('是')).toBeTruthy()
+    expect(screen.getAllByText('是').length).toBeGreaterThanOrEqual(1)
     expect(screen.getByRole('button', { name: '编辑' })).toBeTruthy()
     expect(screen.getByRole('button', { name: '延期' })).toBeTruthy()
     expect(screen.getByRole('button', { name: '完成' })).toBeTruthy()

@@ -7,6 +7,7 @@ import type { DurableTaskCreateDraft, TaskCreateDraftStore } from './service-tas
 import type { WorkspaceTaskMutationTransport } from './service-task-mutation'
 import { type TaskReadView, tasksForView, waitingReason } from './service-task-views'
 import { readWorkspaceSnapshot, type WorkspaceReadTransport } from './service-workspace-read'
+import { UnifiedInbox } from './unified-inbox'
 
 const VIEWS: readonly { id: TaskReadView; label: string }[] = [
   { id: 'inbox', label: '收件箱' },
@@ -48,6 +49,7 @@ function deadlineLabel(value: string | null): string {
 
 export function TaskCenter({
   draftStore,
+  focusPanel,
   focusWorkId,
   gatewayState,
   onNavigateTask,
@@ -55,9 +57,10 @@ export function TaskCenter({
   transport
 }: {
   draftStore: TaskCreateDraftStore
+  focusPanel?: 'source' | 'task' | null
   focusWorkId?: string | null
   gatewayState: string
-  onNavigateTask?: (workId: string | null) => void
+  onNavigateTask?: (workId: string | null, panel?: 'source' | 'task') => void
   onOpenDeliverable?: (workId: string, projectId: string | null) => void
   transport: WorkspaceReadTransport & WorkspaceTaskMutationTransport
 }) {
@@ -285,7 +288,19 @@ export function TaskCenter({
         </p>
       )}
 
-      {tasks.length === 0 ? (
+      {view === 'inbox' ? (
+        <UnifiedInbox
+          onOpenSource={workId => {
+            setSelectedTaskId(workId)
+            onNavigateTask?.(workId, 'source')
+          }}
+          onOpenTask={workId => {
+            setSelectedTaskId(workId)
+            onNavigateTask?.(workId, 'task')
+          }}
+          snapshot={result.data.snapshot}
+        />
+      ) : tasks.length === 0 ? (
         <div className="rounded-lg border border-(--ui-stroke-quaternary) p-6 text-center text-xs text-(--ui-text-tertiary)">
           当前视图没有任务。无 DDL 的任务不会被补入“今日”或“近期”。
         </div>
@@ -298,7 +313,7 @@ export function TaskCenter({
                 className="w-full rounded-lg border border-(--ui-stroke-quaternary) p-3 text-left hover:bg-(--ui-hover-overlay) focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
                 onClick={() => {
                   setSelectedTaskId(task.id)
-                  onNavigateTask?.(task.id)
+                  onNavigateTask?.(task.id, 'task')
                 }}
                 type="button"
               >
@@ -361,6 +376,7 @@ export function TaskCenter({
 
       <TaskInspector
         deliverables={result.data.snapshot.deliverables}
+        focusSourceAudit={focusPanel === 'source' && selectedTaskId === focusWorkId}
         mutationTransport={transport}
         onClose={() => {
           setSelectedTaskId(null)
@@ -378,9 +394,9 @@ export function TaskCenter({
         onRefresh={() => result.refetch()}
         onSelectTask={taskId => {
           setSelectedTaskId(taskId)
-          onNavigateTask?.(taskId)
+          onNavigateTask?.(taskId, 'task')
         }}
-        open={Boolean(selectedTaskId)}
+        open={Boolean(result.data.snapshot.tasks.find(task => task.id === selectedTaskId))}
         project={
           result.data.snapshot.projects.find(project => {
             const selected = result.data.snapshot.tasks.find(task => task.id === selectedTaskId)
@@ -397,6 +413,11 @@ export function TaskCenter({
           return selected?.projectRef ? task.projectRef === selected.projectRef : task.id === selectedTaskId
         })}
       />
+      {focusWorkId && !result.data.snapshot.tasks.some(task => task.id === focusWorkId) && (
+        <div className="rounded-lg border border-(--ui-stroke-quaternary) p-6 text-center text-xs text-(--ui-text-tertiary)">
+          目标任务 {focusWorkId} 不存在；没有展示其他任务或缓存事实。
+        </div>
+      )}
     </div>
   )
 }

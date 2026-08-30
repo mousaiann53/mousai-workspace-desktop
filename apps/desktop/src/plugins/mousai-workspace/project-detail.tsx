@@ -16,7 +16,7 @@ import {
   Textarea,
   useQuery
 } from '@hermes/plugin-sdk'
-import { type ReactNode, useEffect, useMemo, useState } from 'react'
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 
 import type { Deliverable, ProductionReview, Project, Task } from './domain'
 import { ProductionHistory } from './production-history'
@@ -31,6 +31,7 @@ import {
   type WorkspaceReadTransport,
   WorkspaceTransportUnavailableError
 } from './service-workspace-read'
+import { SourceAudit } from './source-audit'
 import type { WorkspaceFocusPanel } from './workspace-links'
 
 const TASK_STATUS_LABELS: Readonly<Record<Task['status'], string>> = {
@@ -184,6 +185,7 @@ function TimelineLayer({ layer }: { layer: TimelineLayerModel }) {
 
 export function TaskInspector({
   deliverables,
+  focusSourceAudit = false,
   mutationTransport,
   onClose,
   onOpenDeliverable,
@@ -197,6 +199,7 @@ export function TaskInspector({
   tasks
 }: {
   deliverables: readonly Deliverable[]
+  focusSourceAudit?: boolean
   mutationTransport: WorkspaceTaskMutationTransport
   onClose: () => void
   onOpenDeliverable: (workId: string) => void
@@ -220,6 +223,7 @@ export function TaskInspector({
   const [deadline, setDeadline] = useState('')
   const [nextAction, setNextAction] = useState('')
   const [deferDate, setDeferDate] = useState('')
+  const sourceAuditRef = useRef<HTMLDivElement>(null)
   const taskDeliverables = task ? deliverables.filter(item => item.taskId === task.id) : []
   const capability = task ? taskActionCapability(task) : null
 
@@ -242,6 +246,12 @@ export function TaskInspector({
     // A same-task refetch after a 409 must not erase the user's failed draft.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projects, task?.id])
+
+  useEffect(() => {
+    if (open && focusSourceAudit) {
+      sourceAuditRef.current?.scrollIntoView({ block: 'start' })
+    }
+  }, [focusSourceAudit, open, task?.id])
 
   const currentProjectRef = task?.projectRef
     ? (projects.find(item => item.id === task.projectRef || item.name === task.projectRef)?.id ?? '')
@@ -514,6 +524,9 @@ export function TaskInspector({
                       value={taskDeliverables.length ? taskDeliverables.map(item => item.filename).join('、') : null}
                     />
                   </div>
+                  <div ref={sourceAuditRef}>
+                    <SourceAudit task={task} tasks={tasks} />
+                  </div>
                   <div className="mt-5 space-y-4 border-t border-(--ui-stroke-quaternary) pt-4">
                     <h3 className="text-xs font-medium">Production summary</h3>
                     <dl className="grid gap-x-4 gap-y-4 sm:grid-cols-2">
@@ -670,7 +683,11 @@ export function ProjectDetail({
   const selectedTask = model?.tasks.find(task => task.id === selectedTaskId) ?? null
 
   useEffect(() => {
-    if (focusPanel === 'task' && focusWorkId && model?.tasks.some(task => task.id === focusWorkId)) {
+    if (
+      (focusPanel === 'task' || focusPanel === 'source') &&
+      focusWorkId &&
+      model?.tasks.some(task => task.id === focusWorkId)
+    ) {
       setSelectedTaskId(focusWorkId)
     }
   }, [focusPanel, focusWorkId, model])
@@ -863,6 +880,7 @@ export function ProjectDetail({
 
       <TaskInspector
         deliverables={model.deliverables}
+        focusSourceAudit={focusPanel === 'source' && focusWorkId === selectedTask?.id}
         mutationTransport={mutationTransport}
         onClose={() => {
           setSelectedTaskId(null)

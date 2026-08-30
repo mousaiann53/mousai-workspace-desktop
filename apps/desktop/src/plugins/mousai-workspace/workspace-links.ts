@@ -1,4 +1,4 @@
-export type WorkspaceFocusPanel = 'deliverable' | 'history' | 'skill' | 'task'
+export type WorkspaceFocusPanel = 'deliverable' | 'history' | 'skill' | 'source' | 'task'
 
 export function projectWorkspaceLink(
   projectId: string,
