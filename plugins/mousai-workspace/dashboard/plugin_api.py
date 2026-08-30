@@ -1139,18 +1139,6 @@ def _run_triage(work_id: str, action: str, body: Any) -> dict[str, Any]:
             status_code=502,
             detail={"code": "workspace_triage_failed", "message": "Workspace triage failed"},
         ) from exc
-    except WorkspaceAuthorityUnavailable as exc:
-        log.warning("workspace mutation authority unavailable action=%s type=%s", action, type(exc).__name__)
-        raise HTTPException(
-            status_code=503,
-            detail={"code": "workspace_authority_unavailable", "message": "Workspace data is unavailable"},
-        ) from exc
-    except Exception as exc:
-        log.warning("workspace mutation failed action=%s type=%s", action, type(exc).__name__)
-        raise HTTPException(
-            status_code=502,
-            detail={"code": "workspace_mutation_failed", "message": "Workspace task update failed"},
-        ) from exc
 
 
 @router.post("/tasks")
