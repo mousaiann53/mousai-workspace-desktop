@@ -108,6 +108,46 @@ class FakeStore:
         raise AssertionError(f"unexpected path: {path}")
 
 
+class FakePlanningStore:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, object]] = []
+
+    def snapshot(self):
+        return {
+            "scheduleBlocks": [],
+            "fixedEvents": [],
+            "planningProposals": [],
+            "planningEvents": [],
+            "estimatedDurations": {"WORK-001": 45},
+        }
+
+    def register(self, body, *, task_lookup, now):
+        self.calls.append(("register", deepcopy(body)))
+        self.task = task_lookup(body["work_id"])
+        return {
+            "proposal": {
+                "proposal_id": "PLAN-0123456789ABCDEF",
+                "proposal_revision": 1,
+                "status": "pending",
+                "work_id": body["work_id"],
+            },
+            "idempotent": False,
+        }
+
+    def mutate(self, proposal_id, action, body, *, task_lookup, now):
+        self.calls.append((action, deepcopy(body)))
+        return {
+            "proposal": {
+                "proposal_id": proposal_id,
+                "proposal_revision": body["expected_revision"] + 1,
+                "status": "accepted" if action == "accept" else "ignored",
+                "work_id": "WORK-001",
+            },
+            "schedule_block": None,
+            "idempotent": False,
+        }
+
+
 class MutationStore:
     def __init__(self, *, status: str = "待验收") -> None:
         self.config = SimpleNamespace(base_app_token="base-token-id")
@@ -208,7 +248,10 @@ class MousaiWorkspaceDashboardPluginTests(unittest.TestCase):
 
     def test_snapshot_is_versioned_allowlisted_and_read_only(self):
         store = FakeStore()
-        with patch.object(self.plugin_api, "_authority_store", return_value=store):
+        planning = FakePlanningStore()
+        with patch.object(self.plugin_api, "_authority_store", return_value=store), patch.object(
+            self.plugin_api, "_planning_store", return_value=planning
+        ):
             snapshot = self.plugin_api.build_workspace_snapshot()
 
         self.assertEqual(snapshot["schemaVersion"], "mousai.workspace.snapshot.v1")
@@ -216,6 +259,7 @@ class MousaiWorkspaceDashboardPluginTests(unittest.TestCase):
         self.assertEqual(len(snapshot["tasks"]), 1)
         task = dict(snapshot["tasks"][0])
         self.assertRegex(task.pop("revision"), r"^[0-9a-f]{64}$")
+        self.assertEqual(task.pop("estimated_duration_minutes"), 45)
         self.assertEqual(
             task,
             {
@@ -236,6 +280,10 @@ class MousaiWorkspaceDashboardPluginTests(unittest.TestCase):
             },
         )
         self.assertEqual(snapshot["events"], [])
+        self.assertEqual(snapshot["scheduleBlocks"], [])
+        self.assertEqual(snapshot["fixedEvents"], [])
+        self.assertEqual(snapshot["planningProposals"], [])
+        self.assertEqual(snapshot["planningEvents"], [])
         self.assertEqual(
             snapshot["deliverables"],
             [
@@ -289,6 +337,43 @@ class MousaiWorkspaceDashboardPluginTests(unittest.TestCase):
         self.assertNotIn("must-not-leave-server", serialized)
         self.assertNotIn("strip-me", serialized)
         self.assertNotIn("local_output_root", serialized)
+
+    def test_planning_routes_use_typed_store_without_loading_bearer(self):
+        planning = FakePlanningStore()
+        task = {"record_id": "rec-task", "fields": {"WORK-ID": "WORK-001", "状态": "收件箱"}}
+        app = FastAPI()
+        app.include_router(self.plugin_api.router, prefix="/api/plugins/mousai-workspace")
+        client = TestClient(app, raise_server_exceptions=False)
+        register_body = {
+            "client_request_id": "desktop-plan-register-001",
+            "work_id": "WORK-001",
+            "starts_at": "2026-09-01T09:00:00+08:00",
+            "ends_at": "2026-09-01T09:45:00+08:00",
+            "executor": "Mousai",
+            "kind": "task",
+            "estimated_duration_minutes": 45,
+            "actor": "Mousai",
+        }
+        with patch.object(self.plugin_api, "_planning_store", return_value=planning), patch.object(
+            self.plugin_api, "_planning_task_lookup", return_value=task
+        ):
+            registered = client.post("/api/plugins/mousai-workspace/planning/proposals", json=register_body)
+            accepted = client.post(
+                "/api/plugins/mousai-workspace/planning/proposals/PLAN-0123456789ABCDEF/accept",
+                json={"client_request_id": "desktop-plan-accept-001", "expected_revision": 1, "actor": "Mousai"},
+            )
+            missing = client.post(
+                "/api/plugins/mousai-workspace/planning/proposals/PLAN-0123456789ABCDEF/delete",
+                json={},
+            )
+
+        self.assertEqual(registered.status_code, 200)
+        self.assertEqual(registered.json()["planning"]["proposal"]["status"], "pending")
+        self.assertEqual(accepted.status_code, 200)
+        self.assertEqual(accepted.json()["planning"]["proposal"]["status"], "accepted")
+        self.assertEqual(missing.status_code, 404)
+        self.assertEqual([action for action, _body in planning.calls], ["register", "accept"])
+        self.assertNotIn("token", repr(planning.calls).lower())
 
     def test_task_and_manifest_sanitizers_fail_closed(self):
         self.assertIsNone(self.plugin_api._sanitize_task("not-a-record"))

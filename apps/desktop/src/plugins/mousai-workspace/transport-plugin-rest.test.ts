@@ -17,6 +17,10 @@ function envelope(overrides: Record<string, unknown> = {}) {
     events: [],
     deliverables: [],
     productionReviews: [],
+    scheduleBlocks: [],
+    fixedEvents: [],
+    planningProposals: [],
+    planningEvents: [],
     ...overrides
   }
 }
@@ -356,6 +360,79 @@ describe('secure Workspace plugin REST transport', () => {
       code: 'illegal_transition',
       message: expect.stringContaining('WAITING_ACCEPTANCE required')
     })
+  })
+
+  it('uses explicit planning routes and refetch-safe canonical DTOs without a renderer token', async () => {
+    const proposal = {
+      proposal_id: 'PLAN-0123456789ABCDEF',
+      proposal_revision: 1,
+      status: 'pending',
+      work_id: 'WORK-001',
+      starts_at: '2026-09-01T09:00:00+08:00',
+      ends_at: '2026-09-01T09:45:00+08:00',
+      executor: 'Mousai',
+      kind: 'task',
+      estimated_duration_minutes: 45,
+      created_at: '2026-08-30T12:00:00+08:00',
+      created_by: 'Mousai'
+    }
+
+    const rest = vi.fn(async (_path: string, options?: { body?: unknown }) => {
+      const body = options?.body as Record<string, unknown>
+
+      return {
+        planning: {
+          proposal: {
+            ...proposal,
+            proposal_revision: body.expected_revision ? Number(body.expected_revision) + 1 : 1,
+            status: _path.endsWith('/accept') ? 'accepted' : _path.endsWith('/ignore') ? 'ignored' : 'pending'
+          },
+          schedule_block: null,
+          idempotent: false
+        }
+      }
+    })
+
+    const transport = createPluginWorkspaceReadTransport(
+      rest as unknown as Parameters<typeof createPluginWorkspaceReadTransport>[0]
+    )
+
+    await transport.registerPlanningProposal({
+      clientRequestId: 'desktop:planning:register:12345678',
+      workId: 'WORK-001',
+      startsAt: proposal.starts_at,
+      endsAt: proposal.ends_at,
+      executor: 'Mousai',
+      estimatedDurationMinutes: 45,
+      actor: 'Mousai'
+    })
+    await transport.acceptPlanningProposal(proposal.proposal_id, {
+      clientRequestId: 'desktop:planning:accept:12345678',
+      expectedRevision: 1,
+      actor: 'Mousai'
+    })
+    await transport.adjustPlanningProposal(proposal.proposal_id, {
+      clientRequestId: 'desktop:planning:adjust:12345678',
+      expectedRevision: 1,
+      actor: 'Mousai',
+      startsAt: proposal.starts_at,
+      endsAt: proposal.ends_at,
+      reason: '人工调整'
+    })
+    await transport.ignorePlanningProposal(proposal.proposal_id, {
+      clientRequestId: 'desktop:planning:ignore:12345678',
+      expectedRevision: 1,
+      actor: 'Mousai',
+      reason: '暂不安排'
+    })
+
+    expect(rest.mock.calls.map(call => call[0])).toEqual([
+      '/planning/proposals',
+      '/planning/proposals/PLAN-0123456789ABCDEF/accept',
+      '/planning/proposals/PLAN-0123456789ABCDEF/adjust',
+      '/planning/proposals/PLAN-0123456789ABCDEF/ignore'
+    ])
+    expect(JSON.stringify(rest.mock.calls)).not.toMatch(/authorization|bearer|token/i)
   })
 
   it('preserves a sanitized 409 revision conflict for the refetch UI', async () => {

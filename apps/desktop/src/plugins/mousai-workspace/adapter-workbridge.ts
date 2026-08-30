@@ -77,6 +77,7 @@ function adaptJob(candidate: unknown, issues: AdapterIssue[], seen: Set<string>)
     priorityLabel: null,
     deadline: null,
     estimate: null,
+    estimatedMinutes: null,
     executor: null,
     nextAction: asTrimmedText(candidate.next_step),
     origin: null,

@@ -4,7 +4,8 @@ import { waitingReason } from './service-task-views'
 export const PLANNING_TIME_ZONE = 'Asia/Shanghai'
 
 export type CalendarView = 'agenda' | 'month' | 'today' | 'week'
-export type AgendaItemKind = 'production_event' | 'project_deadline' | 'task_deadline' | 'workspace_event'
+export type AgendaItemKind =
+  'production_event' | 'project_deadline' | 'schedule_block' | 'task_deadline' | 'workspace_event'
 
 export interface AgendaItem {
   readonly id: string
@@ -165,6 +166,23 @@ export function buildAgendaItems(snapshot: WorkspaceSnapshot): readonly AgendaIt
     })
   }
 
+  for (const block of [...(snapshot.scheduleBlocks ?? []), ...(snapshot.fixedEvents ?? [])]) {
+    if (!planningDateKey(block.startsAt)) {continue}
+    const task = block.workId ? (snapshot.tasks.find(item => item.id === block.workId) ?? null) : null
+    const project = task ? projectForTask(snapshot, task) : null
+    items.push({
+      id: `schedule:${block.blockId}`,
+      kind: 'schedule_block',
+      title: task?.title ?? '固定日程',
+      startsAt: block.startsAt,
+      endsAt: block.endsAt,
+      taskId: block.workId,
+      projectId: project?.id ?? null,
+      deliverableWorkId: null,
+      source: 'control'
+    })
+  }
+
   for (const review of snapshot.productionReviews) {
     const task = snapshot.tasks.find(item => item.id === review.workId) ?? null
     const project = task ? projectForTask(snapshot, task) : null
@@ -218,21 +236,36 @@ export function buildDailyTimeline(snapshot: WorkspaceSnapshot, now = new Date()
   const reviews = new Map(snapshot.productionReviews.map(review => [review.workId, review]))
   const priority = { urgent: 0, high: 1, normal: 2, low: 3, unset: 4 } as const
 
+  const blocks = new Map(
+    (snapshot.scheduleBlocks ?? [])
+      .filter(block => block.workId && planningDateKey(block.startsAt) === today)
+      .map(block => [block.workId as string, block])
+  )
+
   return snapshot.tasks
     .filter(
       task =>
-        task.deadline && planningDateKey(task.deadline) === today && !['archived', 'completed'].includes(task.status)
+        ((task.deadline && planningDateKey(task.deadline) === today) || blocks.has(task.id)) &&
+        !['archived', 'completed'].includes(task.status)
     )
     .map(task => {
       const project = projectForTask(snapshot, task)
       const review = reviews.get(task.id) ?? null
+      const block = blocks.get(task.id)
+
+      const timeRange = block
+        ? `${new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: PLANNING_TIME_ZONE }).format(new Date(block.startsAt))}–${new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: PLANNING_TIME_ZONE }).format(new Date(block.endsAt))}`
+        : '未排时'
 
       return {
         task,
         projectId: project?.id ?? null,
         projectName: project?.name ?? task.projectRef,
-        timeRange: '未排时',
-        estimatedDuration: task.estimate,
+        timeRange,
+        estimatedDuration:
+          task.estimatedMinutes !== undefined && task.estimatedMinutes !== null
+            ? `${task.estimatedMinutes} 分钟`
+            : task.estimate,
         blockingState: waitingReason(task, review),
         productionGate: review?.gateState ?? null
       }

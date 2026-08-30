@@ -11,6 +11,7 @@ import {
   PLANNING_TIME_ZONE,
   planningDateKey
 } from './service-planning-calendar'
+import type { WorkspacePlanningMutationTransport } from './service-planning-mutation'
 import {
   readWorkspaceSnapshot,
   type WorkspaceReadTransport,
@@ -42,6 +43,7 @@ function AgendaRow({ item, onOpen }: { item: AgendaItem; onOpen?: (item: AgendaI
   const label = {
     production_event: '生产事件',
     project_deadline: '项目日期',
+    schedule_block: '正式排程',
     task_deadline: '任务 DDL',
     workspace_event: '正式日程'
   }[item.kind]
@@ -85,7 +87,7 @@ export function PlanningCalendar({
   gatewayState: string
   onOpenItem?: (item: AgendaItem) => void
   onOpenTask?: (workId: string, projectId: string | null) => void
-  transport: WorkspaceReadTransport
+  transport: WorkspaceReadTransport & WorkspacePlanningMutationTransport
 }) {
   const [view, setView] = useState<CalendarView>('today')
 
@@ -142,7 +144,13 @@ export function PlanningCalendar({
   return (
     <div className="space-y-4">
       <DailyTimeline onOpenTask={onOpenTask} snapshot={result.data.snapshot} />
-      <PlanningPreview snapshot={result.data.snapshot} />
+      <PlanningPreview
+        onRefetch={async () => {
+          await result.refetch()
+        }}
+        snapshot={result.data.snapshot}
+        transport={transport}
+      />
 
       <section className="rounded-lg border border-(--ui-stroke-quaternary) bg-(--ui-sidebar-surface-background) p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">

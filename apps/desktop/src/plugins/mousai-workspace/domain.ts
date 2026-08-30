@@ -83,6 +83,8 @@ export interface Task {
   readonly priorityLabel: string | null
   readonly deadline: string | null
   readonly estimate: string | null
+  /** Canonical Planning Core estimate projected by WorkBridge. */
+  readonly estimatedMinutes?: number | null
   readonly executor: string | null
   readonly nextAction: string | null
   readonly origin: string | null
@@ -101,6 +103,45 @@ export interface Event {
   readonly startsAt: string | null
   readonly endsAt: string | null
   readonly source: SourceReference
+}
+
+export type PlanningProposalStatus = 'accepted' | 'ignored' | 'pending'
+
+export interface ScheduleBlock {
+  readonly blockId: string
+  readonly workId: string | null
+  readonly startsAt: string
+  readonly endsAt: string
+  readonly executor: string | null
+  readonly kind: 'fixed_event' | 'hold' | 'task'
+  readonly revision: number
+}
+
+export interface PlanningProposal {
+  readonly proposalId: string
+  readonly proposalRevision: number
+  readonly status: PlanningProposalStatus
+  readonly workId: string
+  readonly startsAt: string
+  readonly endsAt: string
+  readonly executor: string | null
+  readonly kind: 'task'
+  readonly estimatedDurationMinutes: number
+  readonly createdAt: string
+  readonly createdBy: string
+}
+
+export interface PlanningEvent {
+  readonly eventId: string
+  readonly workId: string
+  readonly proposalId: string
+  readonly type: string
+  readonly occurredAt: string
+  readonly actor: string
+  readonly proposalRevision: number
+  readonly previousValue: ProductionJsonValue | null
+  readonly nextValue: ProductionJsonValue | null
+  readonly reason: string | null
 }
 
 export interface Deliverable {
@@ -216,6 +257,11 @@ export interface WorkspaceSnapshot {
   readonly deliverables: readonly Deliverable[]
   readonly productionReviews: readonly ProductionReview[]
   readonly activities: readonly Activity[]
+  /** Canonical Planning Core projections. Optional only for legacy fixtures. */
+  readonly scheduleBlocks?: readonly ScheduleBlock[]
+  readonly fixedEvents?: readonly ScheduleBlock[]
+  readonly planningProposals?: readonly PlanningProposal[]
+  readonly planningEvents?: readonly PlanningEvent[]
   readonly loadedAt: string
 }
 

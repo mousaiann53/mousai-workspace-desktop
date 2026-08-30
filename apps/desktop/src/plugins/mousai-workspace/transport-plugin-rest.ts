@@ -1,7 +1,15 @@
 import type { PluginRestOptions } from '@hermes/plugin-sdk'
 
+import { adaptPlanningSnapshot } from './adapter-planning'
 import { adaptProductionReviews } from './adapter-production-review'
 import type { ProductionApprovedScope, ProductionBundleMeta } from './domain'
+import {
+  type PlanningCommandMeta,
+  type PlanningMutationResult,
+  type PlanningRegisterRequest,
+  WorkspacePlanningMutationError,
+  type WorkspacePlanningMutationTransport
+} from './service-planning-mutation'
 import {
   type ProductionAction,
   ProductionActionError,
@@ -31,6 +39,10 @@ interface WorkspaceSnapshotEnvelope {
   readonly events: readonly unknown[]
   readonly deliverables: readonly unknown[]
   readonly productionReviews: readonly unknown[]
+  readonly scheduleBlocks: readonly unknown[]
+  readonly fixedEvents: readonly unknown[]
+  readonly planningProposals: readonly unknown[]
+  readonly planningEvents: readonly unknown[]
 }
 
 export class WorkspaceSnapshotContractError extends Error {
@@ -59,7 +71,16 @@ function parseEnvelope(value: unknown): WorkspaceSnapshotEnvelope {
     throw new WorkspaceSnapshotContractError('Workspace snapshot generatedAt is invalid.')
   }
 
-  const arrays = ['projects', 'tasks', 'events', 'deliverables'] as const
+  const arrays = [
+    'projects',
+    'tasks',
+    'events',
+    'deliverables',
+    'scheduleBlocks',
+    'fixedEvents',
+    'planningProposals',
+    'planningEvents'
+  ] as const
 
   for (const field of arrays) {
     if (!Array.isArray(value[field])) {
@@ -78,7 +99,11 @@ function parseEnvelope(value: unknown): WorkspaceSnapshotEnvelope {
     tasks: value.tasks as readonly unknown[],
     events: value.events as readonly unknown[],
     deliverables: value.deliverables as readonly unknown[],
-    productionReviews: Array.isArray(value.productionReviews) ? value.productionReviews : []
+    productionReviews: Array.isArray(value.productionReviews) ? value.productionReviews : [],
+    scheduleBlocks: value.scheduleBlocks as readonly unknown[],
+    fixedEvents: value.fixedEvents as readonly unknown[],
+    planningProposals: value.planningProposals as readonly unknown[],
+    planningEvents: value.planningEvents as readonly unknown[]
   }
 }
 
@@ -149,6 +174,47 @@ function productionFailure(error: unknown): ProductionActionError {
   return new ProductionActionError(message, statusCode, codeMatch?.[1] ?? 'production_action_failed')
 }
 
+function planningFailure(error: unknown): WorkspacePlanningMutationError {
+  if (error instanceof WorkspacePlanningMutationError) {return error}
+
+  const statusCode =
+    typeof error === 'object' && error !== null && typeof (error as { statusCode?: unknown }).statusCode === 'number'
+      ? (error as { statusCode: number }).statusCode
+      : null
+
+  const message = error instanceof Error ? error.message : 'Planning mutation failed.'
+  const codeMatch = message.match(/"code"\s*:\s*"([a-z0-9_]+)"/i)
+
+  return new WorkspacePlanningMutationError(message, statusCode, codeMatch?.[1] ?? 'planning_mutation_failed')
+}
+
+function parsePlanningMutationResult(value: unknown): PlanningMutationResult {
+  if (!isRecord(value) || !isRecord(value.planning) || !isRecord(value.planning.proposal)) {
+    throw new WorkspacePlanningMutationError('Planning response is invalid.', null, 'invalid_response')
+  }
+
+  const adapted = adaptPlanningSnapshot({
+    scheduleBlocks: value.planning.schedule_block ? [value.planning.schedule_block] : [],
+    fixedEvents: [],
+    planningProposals: [value.planning.proposal],
+    planningEvents: []
+  })
+
+  if (adapted.data.planningProposals.length !== 1 || adapted.issues.length) {
+    throw new WorkspacePlanningMutationError(
+      'Planning response violates the canonical contract.',
+      null,
+      'invalid_response'
+    )
+  }
+
+  return {
+    proposal: adapted.data.planningProposals[0],
+    scheduleBlock: adapted.data.scheduleBlocks[0] ?? null,
+    idempotent: value.planning.idempotent === true
+  }
+}
+
 function bundleMetaBody(meta: ProductionBundleMeta) {
   return {
     missing_information: meta.missingInformation,
@@ -201,7 +267,10 @@ function parseProductionActionResult(value: unknown, action: ProductionAction): 
 export function createPluginWorkspaceReadTransport(
   rest: PluginRest,
   options: { readonly timeoutMs?: number } = {}
-): WorkspaceReadTransport & WorkspaceTaskMutationTransport & WorkspaceProductionActionTransport {
+): WorkspaceReadTransport &
+  WorkspaceTaskMutationTransport &
+  WorkspaceProductionActionTransport &
+  WorkspacePlanningMutationTransport {
   const timeoutMs = options.timeoutMs ?? WORKSPACE_SNAPSHOT_TIMEOUT_MS
 
   async function mutate(path: string, method: 'PATCH' | 'POST', body: unknown): Promise<TaskMutationResult> {
@@ -230,6 +299,14 @@ export function createPluginWorkspaceReadTransport(
     }
   }
 
+  async function planningAction(path: string, body: unknown): Promise<PlanningMutationResult> {
+    try {
+      return parsePlanningMutationResult(await rest<unknown>(path, { method: 'POST', body, timeoutMs }))
+    } catch (error) {
+      throw planningFailure(error)
+    }
+  }
+
   return Object.freeze({
     scope: `gateway:plugin:mousai-workspace:${WORKSPACE_SNAPSHOT_SCHEMA_VERSION}`,
     async readSnapshot(readOptions?: { readonly signal?: AbortSignal }): Promise<RawWorkspaceReadSnapshot> {
@@ -255,6 +332,10 @@ export function createPluginWorkspaceReadTransport(
         },
         manifests: envelope.deliverables,
         productionReviews: envelope.productionReviews,
+        scheduleBlocks: envelope.scheduleBlocks,
+        fixedEvents: envelope.fixedEvents,
+        planningProposals: envelope.planningProposals,
+        planningEvents: envelope.planningEvents,
         loadedAt: envelope.generatedAt
       }
     },
@@ -269,6 +350,50 @@ export function createPluginWorkspaceReadTransport(
     },
     completeTask(workId: string, request: TaskMutationMeta) {
       return mutate(`/tasks/${encodeURIComponent(workId)}/complete`, 'POST', request)
+    },
+    registerPlanningProposal(request: PlanningRegisterRequest) {
+      return planningAction('/planning/proposals', {
+        client_request_id: request.clientRequestId,
+        work_id: request.workId,
+        starts_at: request.startsAt,
+        ends_at: request.endsAt,
+        executor: request.executor,
+        kind: 'task',
+        estimated_duration_minutes: request.estimatedDurationMinutes,
+        actor: request.actor
+      })
+    },
+    acceptPlanningProposal(proposalId: string, request: PlanningCommandMeta) {
+      return planningAction(`/planning/proposals/${encodeURIComponent(proposalId)}/accept`, {
+        client_request_id: request.clientRequestId,
+        expected_revision: request.expectedRevision,
+        actor: request.actor
+      })
+    },
+    adjustPlanningProposal(
+      proposalId: string,
+      request: PlanningCommandMeta & {
+        readonly startsAt: string
+        readonly endsAt: string
+        readonly reason: string
+      }
+    ) {
+      return planningAction(`/planning/proposals/${encodeURIComponent(proposalId)}/adjust`, {
+        client_request_id: request.clientRequestId,
+        expected_revision: request.expectedRevision,
+        actor: request.actor,
+        starts_at: request.startsAt,
+        ends_at: request.endsAt,
+        reason: request.reason
+      })
+    },
+    ignorePlanningProposal(proposalId: string, request: PlanningCommandMeta & { readonly reason: string }) {
+      return planningAction(`/planning/proposals/${encodeURIComponent(proposalId)}/ignore`, {
+        client_request_id: request.clientRequestId,
+        expected_revision: request.expectedRevision,
+        actor: request.actor,
+        reason: request.reason
+      })
     },
     prepareProduction(workId: string, request: Parameters<WorkspaceProductionActionTransport['prepareProduction']>[1]) {
       return productionAction(workId, 'prepare', {

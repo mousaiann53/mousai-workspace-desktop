@@ -5,7 +5,7 @@ import { waitingReason } from './service-task-views'
 export type PlanningHorizon = 'today' | 'tomorrow' | 'week'
 
 export interface SchedulingBlock {
-  readonly id: string
+  readonly id?: string
   readonly startsAt: string
   readonly endsAt: string
 }
@@ -85,11 +85,21 @@ export function buildCapacitySummary(
   now = new Date()
 ): CapacitySummary {
   const tasks = relevantTasks(snapshot, horizon, now)
-  const estimates = tasks.map(task => parseEstimatedMinutes(task.estimate))
+  const estimates = tasks.map(task => task.estimatedMinutes ?? parseEstimatedMinutes(task.estimate))
 
   const fixedEventCount = agendaItemsForView(buildAgendaItems(snapshot), horizon, now).filter(
     item => item.kind === 'workspace_event'
   ).length
+
+  const canonicalBlocks = [...(snapshot.scheduleBlocks ?? []), ...(snapshot.fixedEvents ?? [])]
+
+  const scheduledMinutes = validBlocks(canonicalBlocks).reduce(
+    (total, block) => total + Math.round((block.end.getTime() - block.start.getTime()) / 60_000),
+    0
+  )
+
+  const dayCount = horizon === 'today' ? 1 : 7
+  const availableMinutes = Math.max(0, dayCount * 9 * 60 - scheduledMinutes)
 
   return {
     horizon,
@@ -97,10 +107,10 @@ export function buildCapacitySummary(
     unknownEstimateCount: estimates.filter(value => value === null).length,
     taskCount: tasks.length,
     fixedEventCount,
-    scheduledMinutes: null,
-    availableMinutes: null,
+    scheduledMinutes,
+    availableMinutes,
     workdayBoundary: '18:00 Asia/Shanghai',
-    sourceState: 'contract_gap'
+    sourceState: 'canonical'
   }
 }
 
@@ -203,17 +213,13 @@ export function buildSchedulingProposals(
   let cursor = context.now
 
   return tasks.map(task => {
-    const estimatedMinutes = parseEstimatedMinutes(task.estimate)
+    const estimatedMinutes = task.estimatedMinutes ?? parseEstimatedMinutes(task.estimate)
     const review = reviewForTask(snapshot.productionReviews, task.id)
     const canonicalBlocker = waitingReason(task, review)
     const rationale: string[] = []
 
-    if (context.scheduleBlocks === null) {
-      rationale.push('schedule_blocks 读取合同尚未提供')
-    }
-
     if (context.dependencies === null) {
-      rationale.push('task_dependencies 读取合同尚未提供')
+      rationale.push('未提供已确认依赖；本建议不推断依赖关系')
     }
 
     if (estimatedMinutes === null) {
@@ -231,12 +237,7 @@ export function buildSchedulingProposals(
     const deadline = task.deadline ? new Date(task.deadline) : null
     const invalidDeadline = deadline && Number.isNaN(deadline.getTime()) ? null : deadline
 
-    const canPlace =
-      context.scheduleBlocks !== null &&
-      context.dependencies !== null &&
-      estimatedMinutes !== null &&
-      Boolean(task.executor) &&
-      !canonicalBlocker
+    const canPlace = estimatedMinutes !== null && Boolean(task.executor) && !canonicalBlocker
 
     const slot = canPlace ? findSlot(cursor, estimatedMinutes, context, allocated, invalidDeadline) : null
 

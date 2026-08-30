@@ -85,7 +85,7 @@ describe('deterministic scheduling foundation', () => {
     expect(parseEstimatedMinutes('大约一小时')).toBeNull()
   })
 
-  it('reports capacity gaps instead of inventing free time', () => {
+  it('reports capacity from canonical planning blocks without inventing estimates', () => {
     const model = buildCapacitySummary(
       snapshot([task('WORK-1', '2026-08-29T18:00:00+08:00', null, null)]),
       'today',
@@ -95,13 +95,13 @@ describe('deterministic scheduling foundation', () => {
     expect(model).toMatchObject({
       taskCount: 1,
       unknownEstimateCount: 1,
-      scheduledMinutes: null,
-      availableMinutes: null,
-      sourceState: 'contract_gap'
+      scheduledMinutes: 0,
+      availableMinutes: 540,
+      sourceState: 'canonical'
     })
   })
 
-  it('returns a blocked preview when canonical schedule contracts are absent', () => {
+  it('can propose from confirmed task facts without inventing dependency relationships', () => {
     const [proposal] = buildSchedulingProposals(
       snapshot([task('WORK-1', '2026-08-29T18:00:00+08:00', '1h', 'Mousai')]),
       {
@@ -114,9 +114,9 @@ describe('deterministic scheduling foundation', () => {
       }
     )
 
-    expect(proposal.proposedStart).toBeNull()
-    expect(proposal.rationale).toContain('schedule_blocks 读取合同尚未提供')
-    expect(proposal.sourceState).toBe('contract_gap')
+    expect(proposal.proposedStart).toBe('2026-08-29T01:00:00.000Z')
+    expect(proposal.rationale).toContain('未提供已确认依赖；本建议不推断依赖关系')
+    expect(proposal.sourceState).toBe('canonical_preview')
   })
 
   it('allocates reproducible daytime slots when all canonical constraints are supplied', () => {

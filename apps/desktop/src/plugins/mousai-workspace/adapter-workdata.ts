@@ -247,6 +247,12 @@ function adaptTasks(payload: unknown, issues: AdapterIssue[]): Task[] {
       priorityLabel,
       deadline,
       estimate: null,
+      estimatedMinutes:
+        Number.isInteger(candidate.estimated_duration_minutes) &&
+        Number(candidate.estimated_duration_minutes) >= 1 &&
+        Number(candidate.estimated_duration_minutes) <= 720
+          ? Number(candidate.estimated_duration_minutes)
+          : null,
       executor: null,
       nextAction: asTrimmedText(fields['下一步']),
       origin: asTrimmedText(fields['来源']),

@@ -37,6 +37,7 @@ PROJECT_TABLE_NAME = "项目与课程"
 TASK_TABLE_NAME = "工作任务"
 WORKBRIDGE_MODULE = Path("/opt/workagent/workbridge-api/workbridge_api.py")
 WORKDATA_ENV_FILE = Path("/var/lib/workagent/workbridge/workbridge.env")
+PLANNING_ROOT = Path("/var/lib/workagent/workbridge/planning")
 MAX_PROJECT_RECORDS = 5_000
 MAX_TASK_RECORDS = 10_000
 MAX_COLLECTION_ITEMS = 64
@@ -204,11 +205,21 @@ def _workbridge_module():
         raise WorkspaceAuthorityUnavailable("WorkBridge authority module cannot be loaded")
     module = importlib.util.module_from_spec(spec)
     sys.modules[module_name] = module
+    module_dir = str(WORKBRIDGE_MODULE.parent)
+    inserted = module_dir not in sys.path
+    if inserted:
+        sys.path.insert(0, module_dir)
     try:
         spec.loader.exec_module(module)
     except Exception as exc:
         sys.modules.pop(module_name, None)
         raise WorkspaceAuthorityUnavailable("WorkBridge authority module cannot be loaded") from exc
+    finally:
+        if inserted:
+            try:
+                sys.path.remove(module_dir)
+            except ValueError:
+                pass
     return module
 
 
@@ -227,6 +238,16 @@ def _authority_store():
         feishu_base_url=values.get("WORKBRIDGE_FEISHU_BASE_URL", "https://open.feishu.cn"),
     )
     return workbridge.FeishuStore(config)
+
+
+@lru_cache(maxsize=1)
+def _planning_store():
+    workbridge = _workbridge_module()
+    planning_module = getattr(workbridge, "planning_store", None)
+    store_type = getattr(planning_module, "PlanningStore", None)
+    if store_type is None:
+        raise WorkspaceAuthorityUnavailable("Planning authority is unavailable")
+    return store_type(str(PLANNING_ROOT))
 
 
 def _sanitize_value(value: Any, *, depth: int = 0) -> Any:
@@ -880,6 +901,13 @@ def build_workspace_snapshot() -> dict[str, Any]:
     ]
     tasks = [sanitized for record in task_records if (sanitized := _sanitize_task(record)) is not None]
     manifests = [sanitized for record in task_records if (sanitized := _sanitize_manifest(record)) is not None]
+    planning = _planning_store().snapshot()
+    durations = planning.pop("estimatedDurations", {})
+    for task in tasks:
+        work_id = _text_value((task.get("fields") or {}).get("WORK-ID"))
+        duration = durations.get(work_id) if work_id else None
+        if isinstance(duration, int) and 1 <= duration <= 720:
+            task["estimated_duration_minutes"] = duration
     return {
         "schemaVersion": SCHEMA_VERSION,
         "generatedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
@@ -887,6 +915,7 @@ def build_workspace_snapshot() -> dict[str, Any]:
         "tasks": tasks,
         "events": [],
         "deliverables": manifests,
+        **planning,
     }
 
 
@@ -906,6 +935,56 @@ def get_workspace_snapshot():
             status_code=502,
             detail={"code": "workspace_read_failed", "message": "Workspace data read failed"},
         ) from exc
+
+
+def _planning_task_lookup(work_id: str) -> dict[str, Any]:
+    store = _authority_store()
+    return _find_task_record(store, _task_table(store), work_id)
+
+
+def _run_planning(action: str, body: dict[str, Any], proposal_id: str | None = None) -> dict[str, Any]:
+    try:
+        store = _planning_store()
+        now = datetime.now(SHANGHAI_TZ).isoformat()
+        result = (
+            store.register(body, task_lookup=_planning_task_lookup, now=now)
+            if action == "register"
+            else store.mutate(proposal_id, action, body, task_lookup=_planning_task_lookup, now=now)
+        )
+        return {"planning": result}
+    except WorkspaceAuthorityUnavailable as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "workspace_authority_unavailable", "message": "Planning authority is unavailable"},
+        ) from exc
+    except Exception as exc:
+        workbridge = _workbridge_module()
+        problem_type = getattr(getattr(workbridge, "planning_store", None), "PlanningProblem", None)
+        if problem_type is not None and isinstance(exc, problem_type):
+            raise HTTPException(
+                status_code=exc.status,
+                detail={"code": exc.code, "message": exc.message},
+            ) from exc
+        log.warning("workspace planning mutation failed action=%s type=%s", action, type(exc).__name__)
+        raise HTTPException(
+            status_code=502,
+            detail={"code": "planning_mutation_failed", "message": "Planning update failed"},
+        ) from exc
+
+
+@router.post("/planning/proposals")
+def register_planning_proposal(body: dict[str, Any]):
+    return _run_planning("register", body)
+
+
+@router.post("/planning/proposals/{proposal_id}/{action}")
+def mutate_planning_proposal(proposal_id: str, action: str, body: dict[str, Any]):
+    if action not in {"accept", "adjust", "ignore"}:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "planning_action_missing", "message": "Planning action was not found"},
+        )
+    return _run_planning(action, body, proposal_id)
 
 
 def _run_mutation(work_id: str, action: str, body: Any) -> dict[str, Any]:

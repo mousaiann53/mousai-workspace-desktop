@@ -1,15 +1,17 @@
 # V1-S2 Planning contract gaps
 
-Date: 2026-08-29  
-Desktop branch: `feature/v1-s2-planning-foundation`
+Date: 2026-08-30
+Desktop branch: `feature/v1-s2-planning-live`
 
 The V1-S2 Desktop foundation consumes the existing canonical Workspace snapshot through Hermes `ctx.rest`. It does not create a second database, use `localStorage` as truth, expose a bearer token to the Renderer, or add generic IPC/shell access.
 
-The gaps below are intentionally recorded instead of being filled with inferred facts. DTO names are proposals for the existing canonical snapshot and typed mutation surface; they are not a competing API implementation.
+Planning Core is now live through the canonical Workspace snapshot and typed Hermes plugin routes. The closed contracts are: `estimated_duration_minutes`, `scheduleBlocks`, `fixedEvents`, `planningProposals`, append-only `planningEvents`, and typed register/accept/adjust/ignore commands. Mutations return the canonical server result and are followed by a full snapshot refetch.
+
+The remaining gaps below are intentionally recorded instead of being filled with inferred facts.
 
 ## Required read contracts
 
-### 1. Estimated duration
+### Closed: estimated duration
 
 - Need: an exact duration usable by capacity and scheduling rules.
 - Why: the current `Task.estimate` is nullable free text. Desktop parses only explicit values such as `45m` or `1.5小时` and otherwise reports “未估算”.
@@ -18,7 +20,7 @@ The gaps below are intentionally recorded instead of being filled with inferred 
 - Authority: WorkData / Control, projected in the Workspace snapshot.
 - Security: scalar task fact only; no credential or local path.
 
-### 2. Schedule blocks
+### Closed: schedule blocks
 
 - Need: occupied and accepted time blocks.
 - Why: available capacity and collision-free proposals cannot be computed from DDL alone.
@@ -40,7 +42,7 @@ interface ScheduleBlockReadModel {
 - Authority: Control / WorkBridge.
 - Security: no per-task N+1 read; no Renderer bearer.
 
-### 3. Fixed events
+### Closed: fixed events
 
 - Need: meetings, classes, appointments, and other immovable time facts.
 - Why: the domain has `Event`, but the current transport does not supply or adapt a canonical event collection.
@@ -71,7 +73,7 @@ interface FixedEventReadModel {
 - Authority: WorkData / Control.
 - Security: identifiers only; validate both WORK-IDs server-side.
 
-### 5. Planning history
+### Closed: planning history
 
 - Need: original DDL, accepted schedule revisions, reschedule count, decision actor/time, and actual completion time.
 - Why: `Task.updatedAt` is not a completion timestamp and must not be presented as one. Production `ACCEPTED` events are used only where they exist.
@@ -124,7 +126,7 @@ interface PlanningEventReadModel {
 
 ## Required write contract
 
-### 9. Typed schedule mutation
+### Closed: typed schedule mutation
 
 - Need: explicit accept, adjust, and ignore actions for a server-issued proposal.
 - Why: the Desktop preview cannot become canonical through local state or a generic patch endpoint.
@@ -150,10 +152,10 @@ ignorePlanningProposal({ proposal_id, expected_revision, client_request_id, reas
 - Authority: WorkData / Control.
 - Security: schema migration and state-transition audit required; Desktop must not create the enum first.
 
-## Desktop behavior until contracts land
+## Desktop behavior for remaining gaps
 
-- Capacity shows known totals plus `availableMinutes = null` and `scheduledMinutes = null`.
-- Scheduling suggestions are deterministic only when all explicit constraints are supplied; the live UI remains a non-writing preview.
-- Accept / Adjust / Ignore are disabled and explain the missing `schedule_mutation` contract.
+- Capacity and occupied time use canonical Planning Core blocks; no local calendar truth is stored.
+- A deterministic preview must first be submitted as a pending canonical proposal. Accept remains a separate, explicit human action.
+- Adjust and Ignore require a reason; stale or illegal transitions preserve the server's 409 error and never fake success.
 - Night automation defaults to `HUMAN_REQUIRED` or `BLOCKED`; missing evidence never becomes approval.
 - Original DDL, reschedule count, actual completion, execution window, and cost remain “未设置” unless canonical events provide them.
