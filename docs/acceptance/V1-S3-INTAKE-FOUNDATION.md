@@ -33,7 +33,18 @@ This is a Desktop engineering completion record. It does not claim overall V1-S3
 
 ## Validation record
 
-Package-level targeted suites, Workspace integration, TypeScript, ESLint/Prettier, secret/IPC scans, diff check, and final production build are required before this record is finalized. The final counts and source HEAD are filled from the closing run rather than estimated here.
+- Package-level targeted suites: PASS.
+- Final Workspace suite: 28 test files / 174 tests PASS.
+- Desktop TypeScript typecheck: PASS.
+- Workspace ESLint: PASS.
+- Workspace Prettier check: PASS.
+- `git diff --check`: PASS.
+- Secret-value scan: 0 values found. Text-only security assertions/documentation mention `bearer`, `token`, and `localStorage`; no credential is present.
+- Broad IPC/shell scan: 0 implementation hits.
+- Clean-source Desktop production build at `a5bde3b425e4`: PASS; 15,171 modules transformed, Electron main/preload bundled, native dependencies staged, and `assert-dist-built` passed.
+- Windows pack: intentionally not run because packaging configuration did not change.
+
+The build emitted existing upstream warnings for future Vite config compatibility, deprecated `advancedChunks`, an ineffective dynamic import, and Babel plugin timing. None was introduced by the V1-S3 Workspace package or blocks the production build.
 
 ## True blockers
 
