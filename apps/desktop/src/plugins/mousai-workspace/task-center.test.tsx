@@ -110,11 +110,13 @@ describe('TaskCenter', () => {
       deferTask: vi.fn(),
       completeTask: vi.fn()
     }
+
     const draftStore: TaskCreateDraftStore = {
       clear: vi.fn(),
       load: () => null,
       save: () => true
     }
+
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
 
     render(
