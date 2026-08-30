@@ -121,6 +121,32 @@ class FakePlanningStore:
             "estimatedDurations": {"WORK-001": 45},
         }
 
+    def register(self, body, *, task_lookup, now):
+        self.calls.append(("register", deepcopy(body)))
+        self.task = task_lookup(body["work_id"])
+        return {
+            "proposal": {
+                "proposal_id": "PLAN-0123456789ABCDEF",
+                "proposal_revision": 1,
+                "status": "pending",
+                "work_id": body["work_id"],
+            },
+            "idempotent": False,
+        }
+
+    def mutate(self, proposal_id, action, body, *, task_lookup, now):
+        self.calls.append((action, deepcopy(body)))
+        return {
+            "proposal": {
+                "proposal_id": proposal_id,
+                "proposal_revision": body["expected_revision"] + 1,
+                "status": "accepted" if action == "accept" else "ignored",
+                "work_id": "WORK-001",
+            },
+            "schedule_block": None,
+            "idempotent": False,
+        }
+
 
 class FakeIntakeStore:
     def __init__(self) -> None:
@@ -157,33 +183,6 @@ class FakeIntakeStore:
     def set_scope(self, body, *, now):
         self.calls.append(("scope", deepcopy(body)))
         return {"work_scope": {"scope_id": body["scope_id"]}, "idempotent": False}
-
-    def register(self, body, *, task_lookup, now):
-        self.calls.append(("register", deepcopy(body)))
-        self.task = task_lookup(body["work_id"])
-        return {
-            "proposal": {
-                "proposal_id": "PLAN-0123456789ABCDEF",
-                "proposal_revision": 1,
-                "status": "pending",
-                "work_id": body["work_id"],
-            },
-            "idempotent": False,
-        }
-
-    def mutate(self, proposal_id, action, body, *, task_lookup, now):
-        self.calls.append((action, deepcopy(body)))
-        return {
-            "proposal": {
-                "proposal_id": proposal_id,
-                "proposal_revision": body["expected_revision"] + 1,
-                "status": "accepted" if action == "accept" else "ignored",
-                "work_id": "WORK-001",
-            },
-            "schedule_block": None,
-            "idempotent": False,
-        }
-
 
 class MutationStore:
     def __init__(self, *, status: str = "待验收") -> None:
