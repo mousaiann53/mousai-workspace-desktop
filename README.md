@@ -3,6 +3,9 @@
 </p>
 
 # Hermes Agent ☤
+
+> **Mousai Workspace Desktop fork:** the `feature/v1-s2-planning-foundation` branch adds a canonical-data-only Planning / Todo / Calendar foundation to the accepted V1-S1 Workspace shell. Live schedule writes remain disabled until the typed Control / WorkBridge contracts in [`docs/V1-S2-CONTRACT-GAPS.md`](docs/V1-S2-CONTRACT-GAPS.md) exist. This is a Desktop engineering checkpoint, not an overall V1-S2 PASS claim.
+
 <p align="center">
   <a href="https://hermes-agent.nousresearch.com/">Hermes Agent</a> | <a href="https://hermes-agent.nousresearch.com/">Hermes Desktop</a>
 </p>
@@ -94,6 +97,7 @@ Expand-Archive $zip "$env:TEMP\uv_x" -Force
 If attestation says "Verification succeeded" and the last line prints `True`, you're good.
 
 **To whitelist Hermes:**
+
 - **Windows Defender:** Run PowerShell as Admin → `Add-MpPreference -ExclusionPath "$env:LOCALAPPDATA\hermes\bin"`
 - **Bitdefender:** Add an exception in the Bitdefender console (Protection > Antivirus > Settings > Manage Exceptions)
 - Whitelist the **folder**, not the file hash — Hermes updates `uv` and the hash changes every version

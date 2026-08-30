@@ -1,17 +1,18 @@
 # Mousai Workspace Desktop status
 
 Updated: 2026-08-29  
-Active branch: `feature/v1-s1-production-review-ui`
+Active branch: `feature/v1-s2-planning-foundation`
 
 ## Milestones
 
-| Milestone                       | Status      | Evidence                                                                                                                              |
-| ------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| V1-S1 M1 Desktop baseline       | PASS        | Official Hermes Desktop build, Remote Gateway, Sessions, Bots, chat, Tool Calling, preview, and restart baseline accepted.            |
-| V1-S1 M2-A Persona + i18n       | PASS        | 乙木, 司木 Moss, 溯光菌, and official `zh` baseline accepted.                                                                         |
-| V1-S1 M2-B Workspace shell      | PASS        | Mousai identity, Editorial Blue shell, plugin seam, and Windows branding accepted.                                                    |
-| V1-S1 M3 Project module         | PASS        | Project Gallery, detail, task center/mutations, canonical production review, and stable deep links accepted by GPT/PM.                |
-| V1-S1 M4–M10 content production | NOT CLAIMED | Desktop product surfaces are implemented; real course/work deliverables remain subject to their own production and Mousai acceptance. |
+| Milestone                       | Status                   | Evidence                                                                                                                                                                     |
+| ------------------------------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| V1-S1 M1 Desktop baseline       | PASS                     | Official Hermes Desktop build, Remote Gateway, Sessions, Bots, chat, Tool Calling, preview, and restart baseline accepted.                                                   |
+| V1-S1 M2-A Persona + i18n       | PASS                     | 乙木, 司木 Moss, 溯光菌, and official `zh` baseline accepted.                                                                                                                |
+| V1-S1 M2-B Workspace shell      | PASS                     | Mousai identity, Editorial Blue shell, plugin seam, and Windows branding accepted.                                                                                           |
+| V1-S1 M3 Project module         | PASS                     | Project Gallery, detail, task center/mutations, canonical production review, and stable deep links accepted by GPT/PM.                                                       |
+| V1-S1 M4–M10 content production | NOT CLAIMED              | Desktop product surfaces are implemented; real course/work deliverables remain subject to their own production and Mousai acceptance.                                        |
+| V1-S2 Planning foundation       | COMPLETE / CONTRACT HOLD | Todo, Agenda, timeline, capacity, deterministic preview, review, night safety, history, and small-window surfaces are built. Live schedule writes await canonical contracts. |
 
 This repository records Desktop engineering status only. It does not promote a course artifact or a WorkBuddy run to PASS.
 
@@ -33,10 +34,11 @@ This repository records Desktop engineering status only. It does not promote a c
 - Metadata comparison model for changed, unchanged, added, and removed artifact files.
 - Resource and Archive views built only from the canonical snapshot.
 - Stable project/task/deliverable/history/skill deep links with honest not-found states.
+- Six-view Todo Center, Shanghai-time Agenda, Daily Timeline, deterministic capacity/scheduling preview, after-work brief, Night Safety, and Planning History.
 
 ## Current blocker
 
-The snapshot exposes only the current manifest file metadata. A real current-versus-previous revision comparison requires the canonical backend to expose the previous revision's file list. Desktop intentionally shows this as unavailable and does not infer historical files.
+Planning is read-only where canonical contracts are absent. Live schedule acceptance requires schedule blocks, fixed events, dependencies, planning history, night-safety evidence, and typed schedule mutations. Previous-revision artifact comparison still requires historical Manifest metadata. Desktop intentionally shows these facts as unavailable and does not infer them.
 
 ## Post-V1 candidates
 
