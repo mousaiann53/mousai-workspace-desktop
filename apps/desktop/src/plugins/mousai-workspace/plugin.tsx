@@ -3,6 +3,7 @@ import { type ReactNode } from 'react'
 import { useSearchParams } from 'react-router'
 
 import { Dashboard } from './dashboard'
+import { PlanningCalendar } from './planning-calendar'
 import { ProjectDetail } from './project-detail'
 import { ProjectGallery } from './project-gallery'
 import { ResourceArchiveView } from './resource-archive'
@@ -105,6 +106,45 @@ function DashboardPage({ transport }: { transport: WorkspaceTransport }) {
             navigateWorkspace(projectWorkspaceLink(item.projectId, { workId: item.task.id, panel }))
           }
         }}
+        onOpenTask={(workId, projectId) =>
+          navigateWorkspace(
+            projectId
+              ? projectWorkspaceLink(projectId, { workId, panel: 'task' })
+              : `/workspace/todos?work=${encodeURIComponent(workId)}`
+          )
+        }
+        transport={transport}
+      />
+    </WorkspacePage>
+  )
+}
+
+function CalendarPage({ transport }: { transport: WorkspaceTransport }) {
+  const gatewayState = useValue(host.state.gateway)
+
+  return (
+    <WorkspacePage eyebrow="WORKSPACE" title="日程">
+      <PlanningCalendar
+        gatewayState={gatewayState}
+        onOpenItem={item => {
+          if (item.projectId) {
+            navigateWorkspace(
+              projectWorkspaceLink(item.projectId, {
+                workId: item.taskId,
+                panel: item.deliverableWorkId ? 'deliverable' : item.taskId ? 'task' : null
+              })
+            )
+          } else if (item.taskId) {
+            navigateWorkspace(`/workspace/todos?work=${encodeURIComponent(item.taskId)}`)
+          }
+        }}
+        onOpenTask={(workId, projectId) =>
+          navigateWorkspace(
+            projectId
+              ? projectWorkspaceLink(projectId, { workId, panel: 'task' })
+              : `/workspace/todos?work=${encodeURIComponent(workId)}`
+          )
+        }
         transport={transport}
       />
     </WorkspacePage>
@@ -240,6 +280,10 @@ function renderSection(
 
   if (section.id === 'todos') {
     return <TasksPage draftStore={draftStore} transport={transport} />
+  }
+
+  if (section.id === 'calendar') {
+    return <CalendarPage transport={transport} />
   }
 
   if (section.id === 'resources') {

@@ -1,6 +1,7 @@
 import { Codicon, useQuery } from '@hermes/plugin-sdk'
 import { useMemo } from 'react'
 
+import { DailyTimeline } from './daily-timeline'
 import { buildDashboardModel, type DashboardTaskItem } from './service-dashboard'
 import {
   readWorkspaceSnapshot,
@@ -126,10 +127,12 @@ function DashboardState({ title, copy }: { title: string; copy: string }) {
 export function Dashboard({
   gatewayState,
   onOpenItem,
+  onOpenTask,
   transport
 }: {
   gatewayState: string
   onOpenItem?: (item: DashboardTaskItem, panel: 'deliverable' | 'task') => void
+  onOpenTask?: (workId: string, projectId: string | null) => void
   transport: WorkspaceReadTransport
 }) {
   const result = useQuery({
@@ -167,12 +170,13 @@ export function Dashboard({
   }
 
   return (
-    <div>
+    <div className="space-y-3">
       {result.data.issues.length > 0 && (
         <div className="mb-3 rounded-md border border-(--ui-stroke-quaternary) px-3 py-2 text-xs text-(--ui-text-tertiary)">
           已忽略 {result.data.issues.length} 条无效或重复记录；未将其合并为看板事实。
         </div>
       )}
+      <DailyTimeline onOpenTask={onOpenTask} snapshot={result.data.snapshot} />
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {SECTIONS.map(section => (
           <DashboardCard
