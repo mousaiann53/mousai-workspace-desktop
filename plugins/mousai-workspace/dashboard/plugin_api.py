@@ -1115,10 +1115,18 @@ def _run_triage(work_id: str, action: str, body: Any) -> dict[str, Any]:
                 raise WorkspaceMutationProblem(409, "revision_conflict", "Task changed since it was read")
             if already_applied:
                 updated = record
-            elif action == "archive":
-                updated = store.archive_task(work_id)
             else:
-                updated = store.flag_task(work_id, body["flag"], note)
+                if action == "archive":
+                    desired = {"状态": "已归档"}
+                else:
+                    if facts.get("status") in TASK_TERMINAL_STATUSES:
+                        raise WorkspaceMutationProblem(409, "terminal_task", "Terminal task cannot be flagged")
+                    desired = {"状态": expected_status, "下一步": note}
+                record_id = record.get("record_id")
+                if not isinstance(record_id, str) or not record_id:
+                    raise WorkspaceAuthorityUnavailable("Task record identity is unavailable")
+                _update_task_record(store, table_id, record_id, desired)
+                updated = _find_task_record(store, table_id, work_id)
         sanitized = _sanitize_task(updated)
         if sanitized is None:
             raise WorkspaceAuthorityUnavailable("Triage result is unavailable")
