@@ -27,4 +27,14 @@ Status: engineering integration complete after production smoke; overall V1-S3 p
 
 ## Validation
 
-Targeted Intake tests, Workspace integration, complete Desktop typecheck/lint/format, production build, secret/IPC scan and real production engineering probe are recorded in the final branch report.
+- Workspace integration: 31 test files / 194 tests PASS.
+- Desktop TypeScript checks (renderer, Electron and e2e configs): PASS.
+- Intake-focused lint: PASS with zero errors; changed files are formatted and `git diff --check` is clean.
+- Production Desktop build: PASS. Windows pack was intentionally not run.
+- Hermes plugin tests in the production Python environment: 22 tests PASS.
+- Live canonical snapshot: two isolated Intake probe records, two merged evidence records and one merged event were read through the deployed plugin; configured-secret and raw-message-field hits were 0.
+- Live triage probe `WORK-20260830-006`: material-missing and archive actions both passed reentrant/idempotent checks; the record was archived after the test.
+- The first triage probe exposed a `WrongTableId` integration defect. The final implementation now uses the plugin's already resolved canonical task table, explicit allowlisted fields and authoritative readback; the failed probe record was also archived.
+- WorkBridge, Hermes Desktop backend, Hermes Gateway and Caddy remained active. WorkBridge and Desktop backend remain loopback-only.
+- Available RAM was stable at 1147 MiB across two samples; swap stayed at 873 MiB with `si/so=0`; kernel OOM hits were 0.
+- Production journal full-secret hits: 0. Tracked-file full-secret hits across both repositories: 0.
