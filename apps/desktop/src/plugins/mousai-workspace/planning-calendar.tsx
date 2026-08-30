@@ -2,6 +2,7 @@ import { Codicon, useQuery } from '@hermes/plugin-sdk'
 import { useMemo, useState } from 'react'
 
 import { DailyTimeline } from './daily-timeline'
+import { PlanningPreview } from './planning-preview'
 import type { AgendaItem } from './service-planning-calendar'
 import {
   agendaItemsForView,
@@ -141,6 +142,7 @@ export function PlanningCalendar({
   return (
     <div className="space-y-4">
       <DailyTimeline onOpenTask={onOpenTask} snapshot={result.data.snapshot} />
+      <PlanningPreview snapshot={result.data.snapshot} />
 
       <section className="rounded-lg border border-(--ui-stroke-quaternary) bg-(--ui-sidebar-surface-background) p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
