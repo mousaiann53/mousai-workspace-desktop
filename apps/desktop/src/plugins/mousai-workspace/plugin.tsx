@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router'
 
 import { Dashboard } from './dashboard'
 import { PlanningCalendar } from './planning-calendar'
+import { PlanningReview } from './planning-review'
 import { ProjectDetail } from './project-detail'
 import { ProjectGallery } from './project-gallery'
 import { ResourceArchiveView } from './resource-archive'
@@ -151,6 +152,20 @@ function CalendarPage({ transport }: { transport: WorkspaceTransport }) {
   )
 }
 
+function ReviewPage({ transport }: { transport: WorkspaceTransport }) {
+  const gatewayState = useValue(host.state.gateway)
+
+  return (
+    <WorkspacePage eyebrow="WORKSPACE" title="复盘">
+      <PlanningReview
+        gatewayState={gatewayState}
+        onOpenTask={task => navigateWorkspace(`/workspace/todos?work=${encodeURIComponent(task.id)}`)}
+        transport={transport}
+      />
+    </WorkspacePage>
+  )
+}
+
 type WorkspaceTransport = WorkspaceReadTransport & WorkspaceTaskMutationTransport & WorkspaceProductionActionTransport
 
 function ProjectsPage({
@@ -284,6 +299,10 @@ function renderSection(
 
   if (section.id === 'calendar') {
     return <CalendarPage transport={transport} />
+  }
+
+  if (section.id === 'review') {
+    return <ReviewPage transport={transport} />
   }
 
   if (section.id === 'resources') {
