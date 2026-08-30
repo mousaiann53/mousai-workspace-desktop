@@ -40,7 +40,15 @@ This record covers Desktop foundation engineering only. It does not claim overal
 
 ## Validation record
 
-Package-level tests are recorded in commits. Final full Workspace tests, TypeScript, lint/format, scans, production build, final HEAD, and exact counts are filled by the closing validation run.
+- Focused and integration validation: 30 test files, 188 tests passed.
+- Desktop TypeScript typecheck: passed.
+- Workspace ESLint and Prettier checks: passed.
+- Secret-value scan: 0 hits.
+- Broad IPC / generic shell scan: 0 hits.
+- `git diff --check`: passed.
+- Production build from clean source HEAD `f728bfcfd156451e7854638a22eb5ddde4b6f9e5`: 15,173 modules transformed, Vite build completed in 19.75 seconds, Electron main/preload bundles and native dependencies staged, and `assert-dist-built` passed.
+- Existing non-blocking build warnings remain: Vite native config `__dirname`, deprecated `advancedChunks`, an ineffective dynamic import, and Babel plugin timing guidance.
+- Windows packaging was intentionally not run for this foundation package.
 
 ## Acceptance boundary
 
