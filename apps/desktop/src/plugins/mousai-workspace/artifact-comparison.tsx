@@ -81,7 +81,35 @@ export function ArtifactComparison({
       ) : (
         <>
           <RevisionFacts label="Previous revision" value={previous} />
-          <div className="overflow-x-auto">
+          <ul className="space-y-2 sm:hidden">
+            {comparisons.map(comparison => {
+              const file = comparison.current ?? comparison.previous
+
+              return (
+                <li className="rounded-md border border-(--ui-stroke-quaternary) p-3" key={comparison.key}>
+                  <div className="flex items-start justify-between gap-2 text-[0.6875rem]">
+                    <span className="min-w-0 break-words font-medium">{file?.filename}</span>
+                    <span className="shrink-0 text-(--ui-text-tertiary)">{CHANGE_LABELS[comparison.state]}</span>
+                  </div>
+                  <dl className="mt-2 space-y-1 text-[0.6875rem] text-(--ui-text-tertiary)">
+                    <div>
+                      <dt className="inline text-(--ui-text-quaternary)">SHA256 </dt>
+                      <dd className="inline break-all">{file?.sha256}</dd>
+                    </div>
+                    <div>
+                      <dt className="inline text-(--ui-text-quaternary)">大小 </dt>
+                      <dd className="inline">{file?.sizeBytes}</dd>
+                    </div>
+                    <div>
+                      <dt className="inline text-(--ui-text-quaternary)">修改时间 </dt>
+                      <dd className="inline">{file?.modifiedAt}</dd>
+                    </div>
+                  </dl>
+                </li>
+              )
+            })}
+          </ul>
+          <div className="hidden overflow-x-auto sm:block">
             <table className="w-full text-left text-[0.6875rem]">
               <thead className="text-(--ui-text-quaternary)">
                 <tr>

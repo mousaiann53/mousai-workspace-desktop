@@ -60,9 +60,9 @@ describe('ArtifactComparison', () => {
 
     fireEvent.change(screen.getByLabelText('比较基线'), { target: { value: 'manifest-v1' } })
     expect(screen.getByText('Previous revision')).toBeTruthy()
-    expect(screen.getByText('added')).toBeTruthy()
-    expect(screen.getByText('removed')).toBeTruthy()
-    expect(screen.getByText('current.pdf')).toBeTruthy()
-    expect(screen.getByText('previous.pdf')).toBeTruthy()
+    expect(screen.getAllByText('added')).toHaveLength(2)
+    expect(screen.getAllByText('removed')).toHaveLength(2)
+    expect(screen.getAllByText('current.pdf')).toHaveLength(2)
+    expect(screen.getAllByText('previous.pdf')).toHaveLength(2)
   })
 })

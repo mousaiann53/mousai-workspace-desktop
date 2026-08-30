@@ -166,11 +166,15 @@ export function TaskCenter({
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex gap-1 rounded-md bg-foreground/4 p-1" role="tablist">
+        <div
+          aria-label="待办视图"
+          className="flex max-w-full gap-1 overflow-x-auto rounded-md bg-foreground/4 p-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          role="tablist"
+        >
           {VIEWS.map(item => (
             <button
               aria-selected={view === item.id}
-              className={`rounded px-3 py-1.5 text-xs ${view === item.id ? 'bg-(--ui-control-active-background)' : 'text-(--ui-text-tertiary)'}`}
+              className={`shrink-0 rounded px-3 py-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 ${view === item.id ? 'bg-(--ui-control-active-background)' : 'text-(--ui-text-tertiary)'}`}
               key={item.id}
               onClick={() => setView(item.id)}
               role="tab"
@@ -291,7 +295,7 @@ export function TaskCenter({
             <li key={task.id}>
               <button
                 aria-label={`打开任务：${task.title}`}
-                className="w-full rounded-lg border border-(--ui-stroke-quaternary) p-3 text-left hover:bg-(--ui-hover-overlay)"
+                className="w-full rounded-lg border border-(--ui-stroke-quaternary) p-3 text-left hover:bg-(--ui-hover-overlay) focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
                 onClick={() => {
                   setSelectedTaskId(task.id)
                   onNavigateTask?.(task.id)

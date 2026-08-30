@@ -343,7 +343,7 @@ export function TaskInspector({
 
   return (
     <Sheet onOpenChange={next => !next && onClose()} open={open}>
-      <SheetContent aria-label="任务详情" className="sm:max-w-md" side="right">
+      <SheetContent aria-label="任务详情" className="w-full sm:max-w-md" side="right">
         {task && (
           <>
             <SheetHeader className="border-b border-(--ui-stroke-quaternary) pr-10">
@@ -492,7 +492,7 @@ export function TaskInspector({
                 </div>
               ) : (
                 <>
-                  <dl className="grid grid-cols-2 gap-x-4 gap-y-4 pt-3">
+                  <dl className="grid gap-x-4 gap-y-4 pt-3 sm:grid-cols-2">
                     <Fact label="项目" value={project?.name ?? task.projectRef} />
                     <Fact label="类型" value={task.typeLabel} />
                     <Fact label="状态" value={task.statusLabel ?? TASK_STATUS_LABELS[task.status]} />
@@ -516,7 +516,7 @@ export function TaskInspector({
                   </div>
                   <div className="mt-5 space-y-4 border-t border-(--ui-stroke-quaternary) pt-4">
                     <h3 className="text-xs font-medium">Production summary</h3>
-                    <dl className="grid grid-cols-2 gap-x-4 gap-y-4">
+                    <dl className="grid gap-x-4 gap-y-4 sm:grid-cols-2">
                       <Fact label="Production gate" value={review?.gateState ?? null} />
                       <Fact
                         label="Approved scope"
@@ -729,7 +729,7 @@ export function ProjectDetail({
             {project.typeLabel}
           </span>
         </div>
-        <dl className="mt-5 grid grid-cols-2 gap-x-5 gap-y-4 md:grid-cols-4">
+        <dl className="mt-5 grid gap-x-5 gap-y-4 sm:grid-cols-2 md:grid-cols-4">
           <Fact label="当前状态" value={project.status} />
           <Fact label="当前阶段" value={project.stage} />
           <Fact label="总体进度" value={project.progress === null ? null : `${project.progress}%`} />
@@ -853,7 +853,7 @@ export function ProjectDetail({
             </div>
           </Section>
           <Section title="对接人 / 等待事项">
-            <dl className="grid grid-cols-2 gap-4 rounded-lg border border-(--ui-stroke-quaternary) p-3">
+            <dl className="grid gap-4 rounded-lg border border-(--ui-stroke-quaternary) p-3 sm:grid-cols-2">
               <Fact label="对接人" value={null} />
               <Fact label="等待事项" value={null} />
             </dl>

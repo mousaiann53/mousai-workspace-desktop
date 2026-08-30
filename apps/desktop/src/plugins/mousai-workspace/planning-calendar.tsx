@@ -49,7 +49,7 @@ function AgendaRow({ item, onOpen }: { item: AgendaItem; onOpen?: (item: AgendaI
   return (
     <li className="border-t border-(--ui-stroke-quaternary) py-3 first:border-t-0 first:pt-0">
       <button
-        className="flex w-full min-w-0 items-start justify-between gap-4 rounded-md p-1 text-left hover:bg-(--ui-hover-overlay) focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+        className="flex w-full min-w-0 flex-col items-start justify-between gap-2 rounded-md p-1 text-left hover:bg-(--ui-hover-overlay) focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 sm:flex-row sm:gap-4"
         onClick={() => onOpen?.(item)}
         type="button"
       >

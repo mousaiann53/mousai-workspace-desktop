@@ -72,7 +72,7 @@ function WorkspaceNavPane() {
 
 function WorkspacePage({ title, eyebrow, children }: { title: string; eyebrow?: string; children: ReactNode }) {
   return (
-    <main className="h-full min-h-0 overflow-y-auto bg-(--ui-editor-surface-background) px-6 pb-10 pt-14 text-foreground [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <main className="h-full min-h-0 overflow-y-auto bg-(--ui-editor-surface-background) px-3 pb-10 pt-10 text-foreground [-ms-overflow-style:none] [scrollbar-width:none] sm:px-6 sm:pt-14 [&::-webkit-scrollbar]:hidden">
       <div className="mx-auto w-full max-w-6xl">
         {eyebrow && (
           <div className="mb-2 text-[0.6875rem] font-medium tracking-[0.16em] text-(--ui-text-quaternary)">
