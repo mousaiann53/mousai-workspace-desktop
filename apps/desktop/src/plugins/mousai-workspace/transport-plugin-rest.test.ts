@@ -21,6 +21,10 @@ function envelope(overrides: Record<string, unknown> = {}) {
     fixedEvents: [],
     planningProposals: [],
     planningEvents: [],
+    ingestEvents: [],
+    duplicateEvidence: [],
+    workScope: [],
+    workScopeEvents: [],
     ...overrides
   }
 }
@@ -137,6 +141,72 @@ describe('secure Workspace plugin REST transport', () => {
     })
   })
 
+  it('adapts canonical intake data from the same batched snapshot', async () => {
+    const rest = vi.fn().mockResolvedValue(
+      envelope({
+        tasks: [
+          {
+            record_id: 'rec-1',
+            revision: 'a'.repeat(64),
+            intake_revision: 'b'.repeat(64),
+            sourceIdentity: {
+              source_type: 'manual',
+              source_id: 'rec-1',
+              channel: 'manual',
+              display_name: '人工',
+              origin_reference: 'workdata:rec-1',
+              received_at: '2026-08-30T10:00:00+08:00'
+            },
+            fields: { 'WORK-ID': 'WORK-001', 任务名称: '工程探针', 状态: '收件箱', 来源: 'Manual' }
+          }
+        ],
+        ingestEvents: [
+          {
+            event_id: 'IE-00000001',
+            work_id: 'WORK-001',
+            type: 'assigned',
+            occurred_at: '2026-08-30T10:01:00+08:00',
+            actor: 'Mousai',
+            source_reference: 'workdata:rec-1',
+            revision: 1
+          }
+        ],
+        duplicateEvidence: [{ work_id: 'WORK-001', state: 'unknown', related_work_ids: [], evidence: [], revision: 0 }],
+        workScope: [
+          {
+            source_type: 'manual',
+            scope_id: 'probe',
+            state: 'approval_required',
+            label: 'Probe',
+            updated_at: '2026-08-30T10:02:00+08:00',
+            revision: 1
+          }
+        ],
+        workScopeEvents: [
+          {
+            event_id: 'SE-00000001',
+            source_type: 'manual',
+            scope_id: 'probe',
+            state: 'approval_required',
+            occurred_at: '2026-08-30T10:02:00+08:00',
+            actor: 'Mousai',
+            revision: 1
+          }
+        ]
+      })
+    )
+
+    const result = await readWorkspaceSnapshot(createPluginWorkspaceReadTransport(rest))
+    expect(result.snapshot.tasks[0]).toMatchObject({
+      id: 'WORK-001',
+      intakeRevision: 'b'.repeat(64),
+      sourceIdentity: { sourceType: 'manual', sourceId: 'rec-1' }
+    })
+    expect(result.snapshot.ingestEvents?.[0]).toMatchObject({ type: 'assigned', workId: 'WORK-001' })
+    expect(result.snapshot.duplicateEvidence?.[0].state).toBe('unknown')
+    expect(result.snapshot.workScope?.[0]).toMatchObject({ sourceType: 'manual', state: 'approval_required' })
+  })
+
   it('uses ctx.rest for the four explicit task mutation routes', async () => {
     const response = (action: 'complete' | 'create' | 'defer' | 'edit') => ({
       workId: 'WORK-001',
@@ -194,6 +264,70 @@ describe('secure Workspace plugin REST transport', () => {
       body: meta,
       timeoutMs: WORKSPACE_SNAPSHOT_TIMEOUT_MS
     })
+  })
+
+  it('uses only explicit intake and triage routes without renderer credentials', async () => {
+    const rest = vi.fn(async (path: string) => {
+      if (path.endsWith('/archive') || path.endsWith('/flag')) {
+        return { task: { record_id: 'rec-1', fields: {} }, idempotent: false }
+      }
+
+      if (path === '/intake/merge') {
+        return { intake: { survivor_work_id: 'WORK-001', idempotent: false } }
+      }
+
+      return { intake: { idempotent: false } }
+    })
+
+    const transport = createPluginWorkspaceReadTransport(
+      rest as Parameters<typeof createPluginWorkspaceReadTransport>[0]
+    )
+
+    const revisions = { 'WORK-001': 'a'.repeat(64), 'WORK-002': 'b'.repeat(64) }
+    await transport.reviewDuplicate({
+      workId: 'WORK-001',
+      relatedWorkId: 'WORK-002',
+      state: 'possible',
+      expectedRevisions: revisions,
+      clientRequestId: 'desktop:intake-review:0001',
+      reason: '人工确认',
+      actor: 'Mousai'
+    })
+    await transport.mergeIntakeTasks({
+      survivorWorkId: 'WORK-001',
+      mergedWorkId: 'WORK-002',
+      expectedRevisions: revisions,
+      clientRequestId: 'desktop:intake-merge:0001',
+      reason: '人工确认',
+      actor: 'Mousai'
+    })
+    await transport.setWorkScope({
+      sourceType: 'manual',
+      scopeId: 'probe',
+      state: 'approval_required',
+      label: 'Probe',
+      expectedRevision: 0,
+      clientRequestId: 'desktop:intake-scope:0001',
+      actor: 'Mousai'
+    })
+    await transport.archiveTask('WORK-001', {
+      clientRequestId: 'desktop:archive:0001',
+      expectedRevision: 'c'.repeat(64)
+    })
+    await transport.flagTask('WORK-002', {
+      clientRequestId: 'desktop:flag:0001',
+      expectedRevision: 'd'.repeat(64),
+      flag: 'material_missing',
+      note: '补充资料'
+    })
+    expect(rest.mock.calls.map(call => call[0])).toEqual([
+      '/intake/duplicates/review',
+      '/intake/merge',
+      '/intake/scopes',
+      '/tasks/WORK-001/archive',
+      '/tasks/WORK-002/flag'
+    ])
+    expect(JSON.stringify(rest.mock.calls)).not.toMatch(/authorization|bearer|cookie|api[_-]?key/i)
   })
 
   it('uses five explicit typed production routes without renderer authentication fields', async () => {

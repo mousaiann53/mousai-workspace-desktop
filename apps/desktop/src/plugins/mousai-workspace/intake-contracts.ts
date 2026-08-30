@@ -6,7 +6,7 @@ export type IntakeSurface = 'health' | 'inbox' | 'notifications' | 'scope'
 export interface WorkScopeEntry {
   readonly sourceType: SourceType
   readonly label: string
-  readonly state: 'contract_unavailable'
+  readonly state: 'approval_required' | 'disabled' | 'enabled' | 'unconfigured'
 }
 
 export interface NotificationReadModel {
@@ -29,13 +29,14 @@ const SOURCES: readonly { type: SourceType; label: string }[] = [
   { type: 'feishu', label: 'Feishu' },
   { type: 'qq', label: 'QQ' },
   { type: 'wechat', label: 'WeChat' },
-  { type: 'hermes_session', label: 'Hermes Session' }
+  { type: 'hermes_session', label: 'Hermes Session' },
+  { type: 'manual', label: 'Manual' }
 ]
 
 export const WORK_SCOPE_ENTRIES: readonly WorkScopeEntry[] = SOURCES.map(source => ({
   sourceType: source.type,
   label: source.label,
-  state: 'contract_unavailable'
+  state: 'unconfigured'
 }))
 
 export const EMPTY_NOTIFICATION_READ_MODEL: NotificationReadModel = Object.freeze({

@@ -3,6 +3,7 @@ import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 
 import type { Task } from './domain'
 import { TaskInspector } from './project-detail'
+import type { WorkspaceIntakeMutationTransport } from './service-intake-mutation'
 import type { DurableTaskCreateDraft, TaskCreateDraftStore } from './service-task-create-draft'
 import type { WorkspaceTaskMutationTransport } from './service-task-mutation'
 import { type TaskReadView, tasksForView, waitingReason } from './service-task-views'
@@ -62,7 +63,7 @@ export function TaskCenter({
   gatewayState: string
   onNavigateTask?: (workId: string | null, panel?: 'source' | 'task') => void
   onOpenDeliverable?: (workId: string, projectId: string | null) => void
-  transport: WorkspaceReadTransport & WorkspaceTaskMutationTransport
+  transport: WorkspaceReadTransport & WorkspaceTaskMutationTransport & Partial<WorkspaceIntakeMutationTransport>
 }) {
   const initialDraft = useRef(draftStore.load()).current
   const [view, setView] = useState<TaskReadView>('inbox')
@@ -298,7 +299,9 @@ export function TaskCenter({
             setSelectedTaskId(workId)
             onNavigateTask?.(workId, 'task')
           }}
+          onRefresh={() => result.refetch()}
           snapshot={result.data.snapshot}
+          transport={transport}
         />
       ) : tasks.length === 0 ? (
         <div className="rounded-lg border border-(--ui-stroke-quaternary) p-6 text-center text-xs text-(--ui-text-tertiary)">
@@ -376,7 +379,9 @@ export function TaskCenter({
 
       <TaskInspector
         deliverables={result.data.snapshot.deliverables}
+        duplicateEvidence={result.data.snapshot.duplicateEvidence}
         focusSourceAudit={focusPanel === 'source' && selectedTaskId === focusWorkId}
+        ingestEvents={result.data.snapshot.ingestEvents}
         mutationTransport={transport}
         onClose={() => {
           setSelectedTaskId(null)

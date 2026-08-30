@@ -4,7 +4,7 @@ import type { Task } from './domain'
 import {
   buildIngestAudit,
   buildSourceIdentity,
-  compareDuplicateEvidence,
+  duplicateEvidenceForTask,
   duplicateStateFromCanonical
 } from './service-source-identity'
 
@@ -44,14 +44,28 @@ describe('SourceIdentity compatibility adapter', () => {
     ).toBe('unknown')
   })
 
-  it('never uses title similarity as duplicate evidence', () => {
-    const left = task({ id: 'WORK-1', title: '同名任务', source: { system: 'workdata', recordId: 'rec-1' } })
-    const unrelated = task({ id: 'WORK-2', title: '同名任务', source: { system: 'workdata', recordId: 'rec-2' } })
-    const sameSource = task({ id: 'WORK-3', source: { system: 'workdata', recordId: 'rec-1' } })
+  it('uses only canonical duplicate evidence and never task title similarity', () => {
+    const current = task({ id: 'WORK-1', title: '同名任务' })
 
-    expect(compareDuplicateEvidence(left, unrelated).state).toBe('unknown')
-    expect(compareDuplicateEvidence(left, sameSource)).toMatchObject({ state: 'possible', relatedWorkIds: ['WORK-3'] })
-    expect(compareDuplicateEvidence(left, left).state).toBe('merged')
+    expect(duplicateEvidenceForTask(current, [])).toEqual({ state: 'unknown', relatedWorkIds: [], reason: null })
+    expect(
+      duplicateEvidenceForTask(current, [
+        {
+          workId: 'WORK-1',
+          state: 'possible',
+          relatedWorkIds: ['WORK-3'],
+          evidence: [
+            {
+              kind: 'manual_review',
+              reference: 'Mousai 人工确认',
+              actor: 'Mousai',
+              occurredAt: '2026-08-30T10:00:00+08:00'
+            }
+          ],
+          revision: 1
+        }
+      ])
+    ).toMatchObject({ state: 'possible', relatedWorkIds: ['WORK-3'], reason: 'Mousai 人工确认' })
   })
 
   it('supports canonical duplicate states without inventing a default', () => {
@@ -61,7 +75,7 @@ describe('SourceIdentity compatibility adapter', () => {
   })
 
   it('keeps ingest history and extraction facts unset when contracts are absent', () => {
-    const audit = buildIngestAudit(task({ origin: 'Manual', projectRef: 'PROJECT-1' }), [])
+    const audit = buildIngestAudit(task({ origin: 'Manual', projectRef: 'PROJECT-1' }), [], [])
 
     expect(audit).toMatchObject({
       manuallyCreated: true,

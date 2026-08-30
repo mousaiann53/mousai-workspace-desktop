@@ -13,7 +13,7 @@ Active branch: `feature/v1-s4-review-cost-foundation`
 | V1-S1 M3 Project module         | PASS                     | Project Gallery, detail, task center/mutations, canonical production review, and stable deep links accepted by GPT/PM.                                                                                                     |
 | V1-S1 M4–M10 content production | NOT CLAIMED              | Desktop product surfaces are implemented; real course/work deliverables remain subject to their own production and Mousai acceptance.                                                                                      |
 | V1-S2 Planning foundation       | COMPLETE / CONTRACT HOLD | Todo, Agenda, timeline, capacity, deterministic preview, review, night safety, history, and small-window surfaces are built. Live schedule writes await canonical contracts.                                               |
-| V1-S3 Intake foundation         | COMPLETE / CONTRACT HOLD | Unified multi-source inbox, source audit, duplicate evidence, intake filters, scope/notification/health shells, deep links, and responsive UX are built. Live policy/merge/notification actions await canonical contracts. |
+| V1-S3 Intake Core + Live        | ENGINEERING COMPLETE     | Canonical source identity, ingest events, duplicate evidence/merge, work scope, and typed triage are live through the authenticated plugin snapshot/actions. Notification routing and canonical source health remain deferred. |
 | V1-S4 Review/cost foundation    | COMPLETE / CONTRACT HOLD | Review, plan-vs-actual, AI contribution, cost/provider/security, after-work, project review, backup, release, and settings surfaces are built. Canonical ledgers/status contracts remain required.                         |
 
 This repository records Desktop engineering status only. It does not promote a course artifact or a WorkBuddy run to PASS.
@@ -44,7 +44,7 @@ This repository records Desktop engineering status only. It does not promote a c
 
 Planning is read-only where canonical contracts are absent. Live schedule acceptance requires schedule blocks, fixed events, dependencies, planning history, night-safety evidence, and typed schedule mutations. Previous-revision artifact comparison still requires historical Manifest metadata. Desktop intentionally shows these facts as unavailable and does not infer them.
 
-Multi-source intake is also read-only where canonical contracts are absent. Source policy, ingest history, duplicate merge, notification state/actions, provider health, and archive/material-missing/decision triage require the typed contracts in `docs/V1-S3-CONTRACT-GAPS.md`.
+Multi-source intake now has live source policy, ingest history, evidence-only duplicate merge, and typed archive/material-missing/decision triage. Notification state/actions and provider health remain the only deferred contracts in `docs/V1-S3-CONTRACT-GAPS.md`.
 
 Review/cost/safety remains read-only where canonical contracts are absent. Usage/cost ledgers, provider credit, contribution assessment, review/timing history, security alerts, backup status, and system settings are specified in `docs/V1-S4-CONTRACT-GAPS.md`.
 

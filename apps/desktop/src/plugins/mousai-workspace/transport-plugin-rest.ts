@@ -4,6 +4,13 @@ import { adaptPlanningSnapshot } from './adapter-planning'
 import { adaptProductionReviews } from './adapter-production-review'
 import type { ProductionApprovedScope, ProductionBundleMeta } from './domain'
 import {
+  type DuplicateReviewRequest,
+  type IntakeMergeRequest,
+  type WorkScopeMutationRequest,
+  WorkspaceIntakeMutationError,
+  type WorkspaceIntakeMutationTransport
+} from './service-intake-mutation'
+import {
   type PlanningCommandMeta,
   type PlanningMutationResult,
   type PlanningRegisterRequest,
@@ -43,6 +50,10 @@ interface WorkspaceSnapshotEnvelope {
   readonly fixedEvents: readonly unknown[]
   readonly planningProposals: readonly unknown[]
   readonly planningEvents: readonly unknown[]
+  readonly ingestEvents: readonly unknown[]
+  readonly duplicateEvidence: readonly unknown[]
+  readonly workScope: readonly unknown[]
+  readonly workScopeEvents: readonly unknown[]
 }
 
 export class WorkspaceSnapshotContractError extends Error {
@@ -79,7 +90,11 @@ function parseEnvelope(value: unknown): WorkspaceSnapshotEnvelope {
     'scheduleBlocks',
     'fixedEvents',
     'planningProposals',
-    'planningEvents'
+    'planningEvents',
+    'ingestEvents',
+    'duplicateEvidence',
+    'workScope',
+    'workScopeEvents'
   ] as const
 
   for (const field of arrays) {
@@ -103,7 +118,11 @@ function parseEnvelope(value: unknown): WorkspaceSnapshotEnvelope {
     scheduleBlocks: value.scheduleBlocks as readonly unknown[],
     fixedEvents: value.fixedEvents as readonly unknown[],
     planningProposals: value.planningProposals as readonly unknown[],
-    planningEvents: value.planningEvents as readonly unknown[]
+    planningEvents: value.planningEvents as readonly unknown[],
+    ingestEvents: value.ingestEvents as readonly unknown[],
+    duplicateEvidence: value.duplicateEvidence as readonly unknown[],
+    workScope: value.workScope as readonly unknown[],
+    workScopeEvents: value.workScopeEvents as readonly unknown[]
   }
 }
 
@@ -175,7 +194,9 @@ function productionFailure(error: unknown): ProductionActionError {
 }
 
 function planningFailure(error: unknown): WorkspacePlanningMutationError {
-  if (error instanceof WorkspacePlanningMutationError) {return error}
+  if (error instanceof WorkspacePlanningMutationError) {
+    return error
+  }
 
   const statusCode =
     typeof error === 'object' && error !== null && typeof (error as { statusCode?: unknown }).statusCode === 'number'
@@ -186,6 +207,38 @@ function planningFailure(error: unknown): WorkspacePlanningMutationError {
   const codeMatch = message.match(/"code"\s*:\s*"([a-z0-9_]+)"/i)
 
   return new WorkspacePlanningMutationError(message, statusCode, codeMatch?.[1] ?? 'planning_mutation_failed')
+}
+
+function intakeFailure(error: unknown): WorkspaceIntakeMutationError {
+  if (error instanceof WorkspaceIntakeMutationError) {
+    return error
+  }
+
+  const statusCode =
+    typeof error === 'object' && error !== null && typeof (error as { statusCode?: unknown }).statusCode === 'number'
+      ? (error as { statusCode: number }).statusCode
+      : null
+
+  const message = error instanceof Error ? error.message : 'Intake mutation failed.'
+  const codeMatch = message.match(/"code"\s*:\s*"([a-z0-9_]+)"/i)
+
+  return new WorkspaceIntakeMutationError(message, statusCode, codeMatch?.[1] ?? 'intake_mutation_failed')
+}
+
+function parseIntakeResult(value: unknown): Record<string, unknown> {
+  if (!isRecord(value) || !isRecord(value.intake) || typeof value.intake.idempotent !== 'boolean') {
+    throw new WorkspaceIntakeMutationError('Intake response is invalid.', null, 'invalid_response')
+  }
+
+  return value.intake
+}
+
+function parseTriageResult(value: unknown): { readonly idempotent: boolean } {
+  if (!isRecord(value) || !isRecord(value.task) || typeof value.idempotent !== 'boolean') {
+    throw new WorkspaceIntakeMutationError('Triage response is invalid.', null, 'invalid_response')
+  }
+
+  return { idempotent: value.idempotent }
 }
 
 function parsePlanningMutationResult(value: unknown): PlanningMutationResult {
@@ -270,7 +323,8 @@ export function createPluginWorkspaceReadTransport(
 ): WorkspaceReadTransport &
   WorkspaceTaskMutationTransport &
   WorkspaceProductionActionTransport &
-  WorkspacePlanningMutationTransport {
+  WorkspacePlanningMutationTransport &
+  WorkspaceIntakeMutationTransport {
   const timeoutMs = options.timeoutMs ?? WORKSPACE_SNAPSHOT_TIMEOUT_MS
 
   async function mutate(path: string, method: 'PATCH' | 'POST', body: unknown): Promise<TaskMutationResult> {
@@ -307,6 +361,22 @@ export function createPluginWorkspaceReadTransport(
     }
   }
 
+  async function intakeAction(path: string, body: unknown): Promise<Record<string, unknown>> {
+    try {
+      return parseIntakeResult(await rest<unknown>(path, { method: 'POST', body, timeoutMs }))
+    } catch (error) {
+      throw intakeFailure(error)
+    }
+  }
+
+  async function triageAction(path: string, body: unknown): Promise<{ readonly idempotent: boolean }> {
+    try {
+      return parseTriageResult(await rest<unknown>(path, { method: 'POST', body, timeoutMs }))
+    } catch (error) {
+      throw intakeFailure(error)
+    }
+  }
+
   return Object.freeze({
     scope: `gateway:plugin:mousai-workspace:${WORKSPACE_SNAPSHOT_SCHEMA_VERSION}`,
     async readSnapshot(readOptions?: { readonly signal?: AbortSignal }): Promise<RawWorkspaceReadSnapshot> {
@@ -336,6 +406,10 @@ export function createPluginWorkspaceReadTransport(
         fixedEvents: envelope.fixedEvents,
         planningProposals: envelope.planningProposals,
         planningEvents: envelope.planningEvents,
+        ingestEvents: envelope.ingestEvents,
+        duplicateEvidence: envelope.duplicateEvidence,
+        workScope: envelope.workScope,
+        workScopeEvents: envelope.workScopeEvents,
         loadedAt: envelope.generatedAt
       }
     },
@@ -394,6 +468,62 @@ export function createPluginWorkspaceReadTransport(
         actor: request.actor,
         reason: request.reason
       })
+    },
+    async reviewDuplicate(request: DuplicateReviewRequest) {
+      const result = await intakeAction('/intake/duplicates/review', {
+        work_id: request.workId,
+        related_work_id: request.relatedWorkId,
+        state: request.state,
+        expected_revisions: request.expectedRevisions,
+        client_request_id: request.clientRequestId,
+        reason: request.reason,
+        actor: request.actor
+      })
+
+      return { idempotent: result.idempotent as boolean }
+    },
+    async mergeIntakeTasks(request: IntakeMergeRequest) {
+      const result = await intakeAction('/intake/merge', {
+        survivor_work_id: request.survivorWorkId,
+        merged_work_id: request.mergedWorkId,
+        expected_revisions: request.expectedRevisions,
+        client_request_id: request.clientRequestId,
+        reason: request.reason,
+        actor: request.actor
+      })
+
+      if (result.survivor_work_id !== request.survivorWorkId) {
+        throw new WorkspaceIntakeMutationError('Merge survivor is invalid.', null, 'invalid_response')
+      }
+
+      return { idempotent: result.idempotent as boolean, survivorWorkId: request.survivorWorkId }
+    },
+    async setWorkScope(request: WorkScopeMutationRequest) {
+      const result = await intakeAction('/intake/scopes', {
+        source_type: request.sourceType,
+        scope_id: request.scopeId,
+        state: request.state,
+        label: request.label,
+        expected_revision: request.expectedRevision,
+        client_request_id: request.clientRequestId,
+        actor: request.actor
+      })
+
+      return { idempotent: result.idempotent as boolean }
+    },
+    archiveTask(workId: string, request: { readonly clientRequestId: string; readonly expectedRevision: string }) {
+      return triageAction(`/tasks/${encodeURIComponent(workId)}/archive`, request)
+    },
+    flagTask(
+      workId: string,
+      request: {
+        readonly clientRequestId: string
+        readonly expectedRevision: string
+        readonly flag: 'decision_required' | 'material_missing'
+        readonly note: string
+      }
+    ) {
+      return triageAction(`/tasks/${encodeURIComponent(workId)}/flag`, request)
     },
     prepareProduction(workId: string, request: Parameters<WorkspaceProductionActionTransport['prepareProduction']>[1]) {
       return productionAction(workId, 'prepare', {

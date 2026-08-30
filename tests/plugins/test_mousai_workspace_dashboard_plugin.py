@@ -121,6 +121,43 @@ class FakePlanningStore:
             "estimatedDurations": {"WORK-001": 45},
         }
 
+
+class FakeIntakeStore:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, object]] = []
+
+    def snapshot(self, records):
+        return {
+            "sourceIdentities": {
+                "WORK-001": {
+                    "source_type": "workspace",
+                    "source_id": "rec-task",
+                    "channel": "workspace",
+                    "display_name": "工作系统",
+                    "origin_reference": "workdata:rec-task",
+                    "received_at": None,
+                }
+            },
+            "ingestEvents": [],
+            "duplicateEvidence": [
+                {"work_id": "WORK-001", "state": "unknown", "related_work_ids": [], "evidence": [], "revision": 0}
+            ],
+            "workScope": [],
+            "workScopeEvents": [],
+        }
+
+    def review_duplicate(self, body, *, task_lookup, now):
+        self.calls.append(("review", deepcopy(body)))
+        return {"duplicate_evidence": {"state": body["state"]}, "idempotent": False}
+
+    def merge(self, body, *, task_lookup, archive, now):
+        self.calls.append(("merge", deepcopy(body)))
+        return {"survivor_work_id": body["survivor_work_id"], "idempotent": False}
+
+    def set_scope(self, body, *, now):
+        self.calls.append(("scope", deepcopy(body)))
+        return {"work_scope": {"scope_id": body["scope_id"]}, "idempotent": False}
+
     def register(self, body, *, task_lookup, now):
         self.calls.append(("register", deepcopy(body)))
         self.task = task_lookup(body["work_id"])
@@ -192,6 +229,15 @@ class MutationStore:
             return {"data": {"record": deepcopy(self.task)}}
         raise AssertionError(f"unexpected request: {method} {path}")
 
+    def archive_task(self, _work_id: str):
+        self.task["fields"]["状态"] = "已归档"
+        return deepcopy(self.task)
+
+    def flag_task(self, _work_id: str, flag: str, note: str):
+        self.task["fields"]["状态"] = {"material_missing": "资料缺失", "decision_required": "需要决策"}[flag]
+        self.task["fields"]["下一步"] = note
+        return deepcopy(self.task)
+
 
 class CreateStore:
     def __init__(self, plugin_api) -> None:
@@ -249,8 +295,12 @@ class MousaiWorkspaceDashboardPluginTests(unittest.TestCase):
     def test_snapshot_is_versioned_allowlisted_and_read_only(self):
         store = FakeStore()
         planning = FakePlanningStore()
+        intake = FakeIntakeStore()
+        workbridge = SimpleNamespace(intake_store=SimpleNamespace(task_revision=lambda _record: "b" * 64))
         with patch.object(self.plugin_api, "_authority_store", return_value=store), patch.object(
             self.plugin_api, "_planning_store", return_value=planning
+        ), patch.object(self.plugin_api, "_intake_store", return_value=intake), patch.object(
+            self.plugin_api, "_workbridge_module", return_value=workbridge
         ):
             snapshot = self.plugin_api.build_workspace_snapshot()
 
@@ -259,6 +309,8 @@ class MousaiWorkspaceDashboardPluginTests(unittest.TestCase):
         self.assertEqual(len(snapshot["tasks"]), 1)
         task = dict(snapshot["tasks"][0])
         self.assertRegex(task.pop("revision"), r"^[0-9a-f]{64}$")
+        self.assertEqual(task.pop("intake_revision"), "b" * 64)
+        self.assertEqual(task.pop("sourceIdentity")["source_type"], "workspace")
         self.assertEqual(task.pop("estimated_duration_minutes"), 45)
         self.assertEqual(
             task,
@@ -284,6 +336,9 @@ class MousaiWorkspaceDashboardPluginTests(unittest.TestCase):
         self.assertEqual(snapshot["fixedEvents"], [])
         self.assertEqual(snapshot["planningProposals"], [])
         self.assertEqual(snapshot["planningEvents"], [])
+        self.assertEqual(snapshot["ingestEvents"], [])
+        self.assertEqual(snapshot["duplicateEvidence"][0]["state"], "unknown")
+        self.assertEqual(snapshot["workScope"], [])
         self.assertEqual(
             snapshot["deliverables"],
             [
@@ -374,6 +429,25 @@ class MousaiWorkspaceDashboardPluginTests(unittest.TestCase):
         self.assertEqual(missing.status_code, 404)
         self.assertEqual([action for action, _body in planning.calls], ["register", "accept"])
         self.assertNotIn("token", repr(planning.calls).lower())
+
+    def test_intake_routes_use_typed_store_without_loading_bearer(self):
+        intake = FakeIntakeStore()
+        app = FastAPI()
+        app.include_router(self.plugin_api.router, prefix="/api/plugins/mousai-workspace")
+        client = TestClient(app, raise_server_exceptions=False)
+        with patch.object(self.plugin_api, "_intake_store", return_value=intake):
+            reviewed = client.post(
+                "/api/plugins/mousai-workspace/intake/duplicates/review",
+                json={"work_id": "WORK-001", "related_work_id": "WORK-002", "state": "possible"},
+            )
+            scoped = client.post(
+                "/api/plugins/mousai-workspace/intake/scopes",
+                json={"source_type": "manual", "scope_id": "probe", "state": "approval_required"},
+            )
+        self.assertEqual(reviewed.status_code, 200)
+        self.assertEqual(scoped.status_code, 200)
+        self.assertEqual([action for action, _body in intake.calls], ["review", "scope"])
+        self.assertNotIn("token", repr(intake.calls).lower())
 
     def test_task_and_manifest_sanitizers_fail_closed(self):
         self.assertIsNone(self.plugin_api._sanitize_task("not-a-record"))
@@ -511,6 +585,25 @@ class MousaiWorkspaceDashboardPluginTests(unittest.TestCase):
         self.assertTrue(repeated["idempotent"])
         self.assertEqual(store.task["fields"]["状态"], "已完成")
         self.assertNotIn("待验收", repr([payload for method, _path, payload in store.calls if method == "PUT"]))
+
+    def test_triage_reuses_typed_archive_and_flag_actions_with_revision_checks(self):
+        store = MutationStore(status="收件箱")
+        with patch.object(self.plugin_api, "_authority_store", return_value=store):
+            flagged = self.plugin_api._run_triage(
+                "WORK-001",
+                "flag",
+                self._request(store, flag="material_missing", note="补充正式资料"),
+            )
+            repeated = self.plugin_api._run_triage(
+                "WORK-001",
+                "flag",
+                self._request(store, flag="material_missing", note="补充正式资料"),
+            )
+            archived = self.plugin_api._run_triage("WORK-001", "archive", self._request(store))
+        self.assertFalse(flagged["idempotent"])
+        self.assertTrue(repeated["idempotent"])
+        self.assertFalse(archived["idempotent"])
+        self.assertEqual(store.task["fields"]["状态"], "已归档")
 
     def test_execution_active_and_terminal_states_are_protected_server_side(self):
         for status in ["云端处理中", "等待本机", "已领取", "本机处理中", "已归档"]:

@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { adaptWorkDataSnapshot } from './adapter-workdata'
@@ -42,7 +42,7 @@ function snapshot(): WorkspaceSnapshot {
 describe('UnifiedInbox', () => {
   afterEach(() => cleanup())
 
-  it('filters real source facts and opens task/source audit without merge mutation', () => {
+  it('filters real source facts and opens task/source audit without canonical merge evidence', () => {
     const onOpenTask = vi.fn()
     const onOpenSource = vi.fn()
 
@@ -58,6 +58,54 @@ describe('UnifiedInbox', () => {
     fireEvent.click(screen.getByRole('button', { name: '来源记录' }))
     expect(onOpenTask).toHaveBeenCalledWith('WORK-FEISHU')
     expect(onOpenSource).toHaveBeenCalledWith('WORK-FEISHU')
-    expect((screen.getByRole('button', { name: '合并' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.queryByRole('button', { name: '合并候选' })).toBeNull()
+  })
+
+  it('offers merge only for canonical possible evidence and refetches after success', async () => {
+    const live = snapshot()
+
+    const tasks = live.tasks.map(task => ({
+      ...task,
+      intakeRevision: task.id === 'WORK-FEISHU' ? 'c'.repeat(64) : 'd'.repeat(64)
+    }))
+
+    const transport = {
+      mergeIntakeTasks: vi.fn().mockResolvedValue({ idempotent: false, survivorWorkId: 'WORK-FEISHU' })
+    }
+
+    const onRefresh = vi.fn().mockResolvedValue(undefined)
+    render(
+      <UnifiedInbox
+        onRefresh={onRefresh}
+        snapshot={{
+          ...live,
+          tasks,
+          duplicateEvidence: [
+            {
+              workId: 'WORK-FEISHU',
+              state: 'possible',
+              relatedWorkIds: ['WORK-QQ'],
+              evidence: [{ kind: 'manual_review', reference: '人工确认', actor: 'Mousai', occurredAt: null }],
+              revision: 1
+            }
+          ]
+        }}
+        transport={transport}
+      />
+    )
+    fireEvent.click(screen.getByRole('button', { name: '合并候选' }))
+    expect(screen.getByText(/被合并项将通过既有归档动作/)).toBeTruthy()
+    fireEvent.change(screen.getByLabelText('合并原因（必填）'), { target: { value: '人工确认重复' } })
+    fireEvent.click(screen.getByRole('button', { name: '确认合并' }))
+    await waitFor(() => expect(transport.mergeIntakeTasks).toHaveBeenCalledOnce())
+    expect(transport.mergeIntakeTasks).toHaveBeenCalledWith(
+      expect.objectContaining({
+        survivorWorkId: 'WORK-FEISHU',
+        mergedWorkId: 'WORK-QQ',
+        reason: '人工确认重复',
+        expectedRevisions: { 'WORK-FEISHU': 'c'.repeat(64), 'WORK-QQ': 'd'.repeat(64) }
+      })
+    )
+    expect(onRefresh).toHaveBeenCalledOnce()
   })
 })

@@ -1,7 +1,8 @@
-import { Input } from '@hermes/plugin-sdk'
+import { Button, Input } from '@hermes/plugin-sdk'
 import { useMemo, useState } from 'react'
 
 import type { WorkspaceSnapshot } from './domain'
+import type { WorkspaceIntakeMutationTransport } from './service-intake-mutation'
 import { SOURCE_LABELS, type SourceType } from './service-source-identity'
 import {
   buildUnifiedInbox,
@@ -27,10 +28,14 @@ function display(value: null | number | string): string {
 export function UnifiedInbox({
   onOpenSource,
   onOpenTask,
+  onRefresh,
+  transport,
   snapshot
 }: {
   onOpenSource?: (workId: string) => void
   onOpenTask?: (workId: string) => void
+  onRefresh?: () => Promise<unknown>
+  transport?: Partial<WorkspaceIntakeMutationTransport>
   snapshot: WorkspaceSnapshot
 }) {
   const [query, setQuery] = useState('')
@@ -38,6 +43,11 @@ export function UnifiedInbox({
   const [sourceType, setSourceType] = useState<UnifiedInboxFilters['sourceType']>('all')
   const [ddl, setDdl] = useState<InboxDdlFilter>('all')
   const [waitingOnly, setWaitingOnly] = useState(false)
+  const [mergePair, setMergePair] = useState<readonly [string, string] | null>(null)
+  const [survivorWorkId, setSurvivorWorkId] = useState('')
+  const [mergeReason, setMergeReason] = useState('')
+  const [mergePending, setMergePending] = useState(false)
+  const [mergeMessage, setMergeMessage] = useState<string | null>(null)
   const allItems = useMemo(() => buildUnifiedInbox(snapshot), [snapshot])
 
   const items = useMemo(
@@ -52,6 +62,46 @@ export function UnifiedInbox({
       }),
     [allItems, ddl, projectId, query, sourceType, waitingOnly]
   )
+
+  async function submitMerge() {
+    if (!mergePair || !mergeReason.trim() || mergePending || !transport?.mergeIntakeTasks) {
+      return
+    }
+    const mergedWorkId = mergePair.find(workId => workId !== survivorWorkId)
+    const survivor = snapshot.tasks.find(task => task.id === survivorWorkId)
+    const merged = snapshot.tasks.find(task => task.id === mergedWorkId)
+
+    if (!mergedWorkId || !survivor?.intakeRevision || !merged?.intakeRevision) {
+      setMergeMessage('当前 snapshot 缺少 canonical intake revision，未执行合并。')
+
+      return
+    }
+
+    setMergePending(true)
+    setMergeMessage(null)
+
+    try {
+      await transport.mergeIntakeTasks({
+        survivorWorkId,
+        mergedWorkId,
+        expectedRevisions: {
+          [survivorWorkId]: survivor.intakeRevision,
+          [mergedWorkId]: merged.intakeRevision
+        },
+        clientRequestId: `desktop:intake-merge:${crypto.randomUUID()}`,
+        reason: mergeReason.trim(),
+        actor: 'Mousai'
+      })
+      await onRefresh?.()
+      setMergePair(null)
+      setMergeReason('')
+      setMergeMessage(`已保留 ${survivorWorkId}，并从服务端重新读取。`)
+    } catch {
+      setMergeMessage('合并失败；任务列表未做本地乐观修改。')
+    } finally {
+      setMergePending(false)
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -122,6 +172,47 @@ export function UnifiedInbox({
         只看等待 / 阻塞
       </label>
 
+      {mergePair && (
+        <section aria-label="合并重复任务" className="space-y-3 rounded-lg border border-(--ui-stroke-quaternary) p-4">
+          <h2 className="text-sm font-medium">确认合并 canonical 任务</h2>
+          <p className="text-xs leading-5 text-(--ui-text-tertiary)">
+            两个 WORK-ID：{mergePair.join(' / ')}。被合并项将通过既有归档动作进入“已归档”；来源引用与 merged ingest
+            event 保留。
+          </p>
+          <label className="block text-xs">
+            <span className="mb-1 block text-(--ui-text-tertiary)">保留 survivor</span>
+            <select
+              className="h-9 w-full rounded-md border border-(--ui-stroke-quaternary) bg-transparent px-2"
+              onChange={event => setSurvivorWorkId(event.target.value)}
+              value={survivorWorkId}
+            >
+              {mergePair.map(workId => (
+                <option key={workId} value={workId}>
+                  {workId}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block text-xs">
+            <span className="mb-1 block text-(--ui-text-tertiary)">合并原因（必填）</span>
+            <Input onChange={event => setMergeReason(event.target.value)} value={mergeReason} />
+          </label>
+          <div className="flex gap-2">
+            <Button disabled={mergePending || !mergeReason.trim()} onClick={() => void submitMerge()} size="sm">
+              {mergePending ? '合并中' : '确认合并'}
+            </Button>
+            <Button disabled={mergePending} onClick={() => setMergePair(null)} size="sm" variant="secondary">
+              取消
+            </Button>
+          </div>
+        </section>
+      )}
+      {mergeMessage && (
+        <p className="text-xs text-(--ui-text-tertiary)" role="status">
+          {mergeMessage}
+        </p>
+      )}
+
       {items.length ? (
         <ul className="space-y-2">
           {items.map(item => (
@@ -189,14 +280,28 @@ export function UnifiedInbox({
                 >
                   来源记录
                 </button>
-                <button
-                  className="rounded-md px-2 py-1 text-[0.6875rem] text-(--ui-text-quaternary) disabled:cursor-not-allowed disabled:opacity-60"
-                  disabled
-                  title="mergeMutation typed contract unavailable"
-                  type="button"
-                >
-                  合并
-                </button>
+                {transport?.mergeIntakeTasks &&
+                  item.duplicate.state === 'possible' &&
+                  item.duplicate.relatedWorkIds.some(id => snapshot.tasks.some(task => task.id === id)) && (
+                    <button
+                      className="rounded-md px-2 py-1 text-[0.6875rem] text-(--ui-text-tertiary) hover:bg-(--ui-hover-overlay) focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                      onClick={() => {
+                        const related = item.duplicate.relatedWorkIds.find(id =>
+                          snapshot.tasks.some(task => task.id === id)
+                        )
+
+                        if (related) {
+                          setMergePair([item.task.id, related])
+                          setSurvivorWorkId(item.task.id)
+                          setMergeReason('')
+                          setMergeMessage(null)
+                        }
+                      }}
+                      type="button"
+                    >
+                      合并候选
+                    </button>
+                  )}
               </div>
             </li>
           ))}

@@ -1,3 +1,4 @@
+import { adaptIntakeSnapshot } from './adapter-intake'
 import { adaptManifest } from './adapter-manifest'
 import { adaptPlanningSnapshot } from './adapter-planning'
 import { adaptProductionReviews } from './adapter-production-review'
@@ -20,6 +21,10 @@ export interface RawWorkspaceReadSnapshot {
   readonly fixedEvents?: unknown
   readonly planningProposals?: unknown
   readonly planningEvents?: unknown
+  readonly ingestEvents?: unknown
+  readonly duplicateEvidence?: unknown
+  readonly workScope?: unknown
+  readonly workScopeEvents?: unknown
   readonly loadedAt?: string
 }
 
@@ -87,6 +92,13 @@ export async function readWorkspaceSnapshot(
     planningEvents: raw.planningEvents ?? []
   })
 
+  const intake = adaptIntakeSnapshot({
+    ingestEvents: raw.ingestEvents ?? [],
+    duplicateEvidence: raw.duplicateEvidence ?? [],
+    workScope: raw.workScope ?? [],
+    workScopeEvents: raw.workScopeEvents ?? []
+  })
+
   const loadedAtCandidate = raw.loadedAt ? new Date(raw.loadedAt) : new Date()
 
   const loadedAt = Number.isNaN(loadedAtCandidate.getTime())
@@ -102,6 +114,7 @@ export async function readWorkspaceSnapshot(
       productionReviews: productionReviews.data,
       activities: [],
       ...planning.data,
+      ...intake.data,
       loadedAt
     },
     issues: [
@@ -109,7 +122,8 @@ export async function readWorkspaceSnapshot(
       ...workbridge.issues,
       ...manifestResults.flatMap(result => result.issues),
       ...productionReviews.issues,
-      ...planning.issues
+      ...planning.issues,
+      ...intake.issues
     ]
   }
 }

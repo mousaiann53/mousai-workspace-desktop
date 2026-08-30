@@ -10,6 +10,7 @@ import { ProjectDetail } from './project-detail'
 import { ProjectGallery } from './project-gallery'
 import { ResourceArchiveView } from './resource-archive'
 import { ReviewCostCenter, type ReviewFoundationSurface } from './review-cost-center'
+import type { WorkspaceIntakeMutationTransport } from './service-intake-mutation'
 import { createLocalDeliverableAccess, type LocalDeliverableAccess } from './service-local-deliverables'
 import type { WorkspacePlanningMutationTransport } from './service-planning-mutation'
 import type { WorkspaceProductionActionTransport } from './service-production-actions'
@@ -190,7 +191,8 @@ function ReviewPage({ transport }: { transport: WorkspaceTransport }) {
 type WorkspaceTransport = WorkspaceReadTransport &
   WorkspaceTaskMutationTransport &
   WorkspaceProductionActionTransport &
-  WorkspacePlanningMutationTransport
+  WorkspacePlanningMutationTransport &
+  WorkspaceIntakeMutationTransport
 
 function ProjectsPage({
   localAccess,

@@ -38,6 +38,7 @@ TASK_TABLE_NAME = "工作任务"
 WORKBRIDGE_MODULE = Path("/opt/workagent/workbridge-api/workbridge_api.py")
 WORKDATA_ENV_FILE = Path("/var/lib/workagent/workbridge/workbridge.env")
 PLANNING_ROOT = Path("/var/lib/workagent/workbridge/planning")
+INTAKE_ROOT = Path("/var/lib/workagent/workbridge/intake")
 MAX_PROJECT_RECORDS = 5_000
 MAX_TASK_RECORDS = 10_000
 MAX_COLLECTION_ITEMS = 64
@@ -248,6 +249,16 @@ def _planning_store():
     if store_type is None:
         raise WorkspaceAuthorityUnavailable("Planning authority is unavailable")
     return store_type(str(PLANNING_ROOT))
+
+
+@lru_cache(maxsize=1)
+def _intake_store():
+    workbridge = _workbridge_module()
+    intake_module = getattr(workbridge, "intake_store", None)
+    store_type = getattr(intake_module, "IntakeStore", None)
+    if store_type is None:
+        raise WorkspaceAuthorityUnavailable("Intake authority is unavailable")
+    return store_type(str(INTAKE_ROOT))
 
 
 def _sanitize_value(value: Any, *, depth: int = 0) -> Any:
@@ -908,6 +919,22 @@ def build_workspace_snapshot() -> dict[str, Any]:
         duration = durations.get(work_id) if work_id else None
         if isinstance(duration, int) and 1 <= duration <= 720:
             task["estimated_duration_minutes"] = duration
+    intake = _intake_store().snapshot(task_records)
+    identities = intake.pop("sourceIdentities", {})
+    intake_module = getattr(_workbridge_module(), "intake_store", None)
+    revision_fn = getattr(intake_module, "task_revision", None)
+    if not callable(revision_fn):
+        raise WorkspaceAuthorityUnavailable("Intake task revision is unavailable")
+    records_by_work_id = {
+        work_id: record
+        for record in task_records
+        if (work_id := _text_value((record.get("fields") or {}).get("WORK-ID")))
+    }
+    for task in tasks:
+        work_id = _text_value((task.get("fields") or {}).get("WORK-ID"))
+        raw_record = records_by_work_id.get(work_id)
+        task["sourceIdentity"] = identities.get(work_id)
+        task["intake_revision"] = revision_fn(raw_record) if raw_record else None
     return {
         "schemaVersion": SCHEMA_VERSION,
         "generatedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
@@ -916,6 +943,7 @@ def build_workspace_snapshot() -> dict[str, Any]:
         "events": [],
         "deliverables": manifests,
         **planning,
+        **intake,
     }
 
 
@@ -987,6 +1015,63 @@ def mutate_planning_proposal(proposal_id: str, action: str, body: dict[str, Any]
     return _run_planning(action, body, proposal_id)
 
 
+def _intake_task_lookup(work_id: str) -> dict[str, Any]:
+    store = _authority_store()
+    return _find_task_record(store, _task_table(store), work_id)
+
+
+def _run_intake(action: str, body: dict[str, Any]) -> dict[str, Any]:
+    try:
+        store = _intake_store()
+        now = datetime.now(SHANGHAI_TZ).isoformat()
+        if action == "review":
+            result = store.review_duplicate(body, task_lookup=_intake_task_lookup, now=now)
+        elif action == "merge":
+            result = store.merge(
+                body,
+                task_lookup=_intake_task_lookup,
+                archive=_authority_store().archive_task,
+                now=now,
+            )
+        elif action == "scope":
+            result = store.set_scope(body, now=now)
+        else:
+            raise HTTPException(status_code=404, detail={"code": "intake_action_missing", "message": "Intake action was not found"})
+        return {"intake": result}
+    except WorkspaceAuthorityUnavailable as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "workspace_authority_unavailable", "message": "Intake authority is unavailable"},
+        ) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        workbridge = _workbridge_module()
+        problem_type = getattr(getattr(workbridge, "intake_store", None), "IntakeProblem", None)
+        if problem_type is not None and isinstance(exc, problem_type):
+            raise HTTPException(status_code=exc.status, detail={"code": exc.code, "message": exc.message}) from exc
+        log.warning("workspace intake mutation failed action=%s type=%s", action, type(exc).__name__)
+        raise HTTPException(
+            status_code=502,
+            detail={"code": "intake_mutation_failed", "message": "Intake update failed"},
+        ) from exc
+
+
+@router.post("/intake/duplicates/review")
+def review_intake_duplicate(body: dict[str, Any]):
+    return _run_intake("review", body)
+
+
+@router.post("/intake/merge")
+def merge_intake_tasks(body: dict[str, Any]):
+    return _run_intake("merge", body)
+
+
+@router.post("/intake/scopes")
+def set_intake_scope(body: dict[str, Any]):
+    return _run_intake("scope", body)
+
+
 def _run_mutation(work_id: str, action: str, body: Any) -> dict[str, Any]:
     try:
         return mutate_task(work_id, action, body)
@@ -994,6 +1079,65 @@ def _run_mutation(work_id: str, action: str, body: Any) -> dict[str, Any]:
         raise HTTPException(
             status_code=exc.status_code,
             detail={"code": exc.code, "message": exc.message},
+        ) from exc
+
+
+def _run_triage(work_id: str, action: str, body: Any) -> dict[str, Any]:
+    allowed = (
+        frozenset({"clientRequestId", "expectedRevision"})
+        if action == "archive"
+        else frozenset({"clientRequestId", "expectedRevision", "flag", "note"})
+    )
+    try:
+        _validate_work_id(work_id)
+        _validate_request_meta(body, allowed=allowed)
+        store = _authority_store()
+        table_id = _task_table(store)
+        with store._write_lock:
+            record = _find_task_record(store, table_id, work_id)
+            current_revision = _task_revision(record)
+            expected_revision = body["expectedRevision"]
+            facts = _task_facts(record)
+            if action == "archive":
+                already_applied = facts.get("status") == "已归档"
+            else:
+                flag = body.get("flag")
+                note = _validate_nullable_text(
+                    body.get("note"), field="note", maximum=MAX_NEXT_ACTION_LENGTH, required=True
+                )
+                if note is None:
+                    raise WorkspaceMutationProblem(400, "invalid_note", "note is required")
+                expected_status = {"material_missing": "资料缺失", "decision_required": "需要决策"}.get(flag)
+                if expected_status is None:
+                    raise WorkspaceMutationProblem(400, "invalid_flag", "Flag is invalid")
+                already_applied = facts.get("status") == expected_status and facts.get("nextAction") == note
+            if not already_applied and current_revision != expected_revision:
+                raise WorkspaceMutationProblem(409, "revision_conflict", "Task changed since it was read")
+            if already_applied:
+                updated = record
+            elif action == "archive":
+                updated = store.archive_task(work_id)
+            else:
+                updated = store.flag_task(work_id, body["flag"], note)
+        sanitized = _sanitize_task(updated)
+        if sanitized is None:
+            raise WorkspaceAuthorityUnavailable("Triage result is unavailable")
+        return {"task": sanitized, "idempotent": already_applied}
+    except WorkspaceMutationProblem as exc:
+        raise HTTPException(status_code=exc.status_code, detail={"code": exc.code, "message": exc.message}) from exc
+    except WorkspaceAuthorityUnavailable as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "workspace_authority_unavailable", "message": "Workspace data is unavailable"},
+        ) from exc
+    except Exception as exc:
+        problem_type = getattr(_workbridge_module(), "ApiProblem", None)
+        if problem_type is not None and isinstance(exc, problem_type):
+            raise HTTPException(status_code=exc.status, detail={"code": exc.code, "message": exc.message}) from exc
+        log.warning("workspace triage failed action=%s type=%s", action, type(exc).__name__)
+        raise HTTPException(
+            status_code=502,
+            detail={"code": "workspace_triage_failed", "message": "Workspace triage failed"},
         ) from exc
     except WorkspaceAuthorityUnavailable as exc:
         log.warning("workspace mutation authority unavailable action=%s type=%s", action, type(exc).__name__)
@@ -1045,3 +1189,13 @@ def defer_task(work_id: str, body: dict[str, Any]):
 @router.post("/tasks/{work_id}/complete")
 def complete_task(work_id: str, body: dict[str, Any]):
     return _run_mutation(work_id, "complete", body)
+
+
+@router.post("/tasks/{work_id}/archive")
+def archive_task(work_id: str, body: dict[str, Any]):
+    return _run_triage(work_id, "archive", body)
+
+
+@router.post("/tasks/{work_id}/flag")
+def flag_task(work_id: str, body: dict[str, Any]):
+    return _run_triage(work_id, "flag", body)

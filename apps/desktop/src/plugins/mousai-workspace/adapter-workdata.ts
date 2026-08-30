@@ -1,3 +1,4 @@
+import { adaptSourceIdentity } from './adapter-intake'
 import {
   asIsoDateTime,
   asNullableBoolean,
@@ -238,6 +239,8 @@ function adaptTasks(payload: unknown, issues: AdapterIssue[]): Task[] {
     tasks.push({
       id,
       revision: asTrimmedText(candidate.revision),
+      intakeRevision: asTrimmedText(candidate.intake_revision),
+      sourceIdentity: adaptSourceIdentity(candidate.sourceIdentity),
       title,
       typeLabel: asTrimmedText(fields['类型']),
       projectRef: asTrimmedText(fields['所属项目']),

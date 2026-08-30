@@ -18,10 +18,11 @@ import {
 } from '@hermes/plugin-sdk'
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 
-import type { Deliverable, ProductionReview, Project, Task } from './domain'
+import type { Deliverable, ProductionReview, Project, Task, WorkspaceSnapshot } from './domain'
 import { ProductionHistory } from './production-history'
 import { ProductionReviewCard } from './production-review'
 import { ProjectReviewPanel } from './review-cost-center'
+import type { WorkspaceIntakeMutationTransport } from './service-intake-mutation'
 import type { LocalDeliverableAccess } from './service-local-deliverables'
 import type { WorkspaceProductionActionTransport } from './service-production-actions'
 import { projectDetailModel, type TimelineLayerModel } from './service-project-detail'
@@ -186,7 +187,9 @@ function TimelineLayer({ layer }: { layer: TimelineLayerModel }) {
 
 export function TaskInspector({
   deliverables,
+  duplicateEvidence,
   focusSourceAudit = false,
+  ingestEvents,
   mutationTransport,
   onClose,
   onOpenDeliverable,
@@ -200,8 +203,10 @@ export function TaskInspector({
   tasks
 }: {
   deliverables: readonly Deliverable[]
+  duplicateEvidence: WorkspaceSnapshot['duplicateEvidence']
   focusSourceAudit?: boolean
-  mutationTransport: WorkspaceTaskMutationTransport
+  ingestEvents: WorkspaceSnapshot['ingestEvents']
+  mutationTransport: WorkspaceTaskMutationTransport & Partial<WorkspaceIntakeMutationTransport>
   onClose: () => void
   onOpenDeliverable: (workId: string) => void
   onRefresh: () => Promise<unknown>
@@ -217,6 +222,9 @@ export function TaskInspector({
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [completeOpen, setCompleteOpen] = useState(false)
+  const [archiveOpen, setArchiveOpen] = useState(false)
+  const [flagMode, setFlagMode] = useState<'decision_required' | 'material_missing' | null>(null)
+  const [flagNote, setFlagNote] = useState('')
   const [title, setTitle] = useState('')
   const [type, setType] = useState('')
   const [projectRef, setProjectRef] = useState('')
@@ -233,6 +241,9 @@ export function TaskInspector({
     setPending(false)
     setError(null)
     setCompleteOpen(false)
+    setArchiveOpen(false)
+    setFlagMode(null)
+    setFlagNote('')
     setTitle(task?.title ?? '')
     setType(task?.typeLabel ?? '')
     setProjectRef(
@@ -350,6 +361,34 @@ export function TaskInspector({
         }),
       null
     )
+  }
+
+  async function archiveTask() {
+    if (!task?.revision || !mutationTransport.archiveTask) {
+      return
+    }
+    await runMutation(
+      () => mutationTransport.archiveTask!(task.id, { clientRequestId: requestId(), expectedRevision: task.revision! }),
+      null
+    )
+  }
+
+  async function flagTask() {
+    if (!task?.revision || !flagMode || !flagNote.trim() || !mutationTransport.flagTask) {
+      return
+    }
+    await runMutation(
+      () =>
+        mutationTransport.flagTask!(task.id, {
+          clientRequestId: requestId(),
+          expectedRevision: task.revision!,
+          flag: flagMode,
+          note: flagNote.trim()
+        }),
+      null
+    )
+    setFlagMode(null)
+    setFlagNote('')
   }
 
   return (
@@ -526,7 +565,11 @@ export function TaskInspector({
                     />
                   </div>
                   <div ref={sourceAuditRef}>
-                    <SourceAudit task={task} tasks={tasks} />
+                    <SourceAudit
+                      duplicateEvidence={duplicateEvidence ?? []}
+                      ingestEvents={ingestEvents ?? []}
+                      task={task}
+                    />
                   </div>
                   <div className="mt-5 space-y-4 border-t border-(--ui-stroke-quaternary) pt-4">
                     <h3 className="text-xs font-medium">Production summary</h3>
@@ -577,29 +620,52 @@ export function TaskInspector({
                     >
                       完成
                     </Button>
-                    <Button disabled size="sm" title="缺少 typed archive mutation contract" variant="secondary">
+                    <Button
+                      disabled={pending || !capability?.canEdit || !mutationTransport.archiveTask}
+                      onClick={() => setArchiveOpen(true)}
+                      size="sm"
+                      variant="secondary"
+                    >
                       归档
                     </Button>
                     <Button
-                      disabled
+                      disabled={pending || !capability?.canEdit || !mutationTransport.flagTask}
+                      onClick={() => setFlagMode('material_missing')}
                       size="sm"
-                      title="缺少 typed material-missing mutation contract"
                       variant="secondary"
                     >
                       资料缺失
                     </Button>
                     <Button
-                      disabled
+                      disabled={pending || !capability?.canEdit || !mutationTransport.flagTask}
+                      onClick={() => setFlagMode('decision_required')}
                       size="sm"
-                      title="缺少 typed decision-required mutation contract"
                       variant="secondary"
                     >
                       需要决策
                     </Button>
                   </div>
-                  <p className="mt-3 text-xs text-(--ui-text-quaternary)">
-                    归档、资料缺失、需要决策尚无 typed backend action；按钮保持关闭，不通过 generic patch 绕过。
-                  </p>
+                  {flagMode && (
+                    <section className="mt-4 space-y-3 rounded-md border border-(--ui-stroke-quaternary) p-3">
+                      <p className="text-xs font-medium">
+                        {flagMode === 'material_missing' ? '标记资料缺失' : '标记需要决策'}
+                      </p>
+                      <Textarea
+                        disabled={pending}
+                        onChange={event => setFlagNote(event.target.value)}
+                        placeholder="说明下一步（必填）"
+                        value={flagNote}
+                      />
+                      <div className="flex gap-2">
+                        <Button disabled={pending || !flagNote.trim()} onClick={() => void flagTask()} size="sm">
+                          确认
+                        </Button>
+                        <Button disabled={pending} onClick={() => setFlagMode(null)} size="sm" variant="secondary">
+                          取消
+                        </Button>
+                      </div>
+                    </section>
+                  )}
                   {capability?.reason === 'active_execution' && (
                     <p className="mt-3 text-xs text-(--ui-text-tertiary)">
                       任务正在由 WorkBridge 执行，Workspace 写操作已锁定。
@@ -628,6 +694,14 @@ export function TaskInspector({
               onConfirm={completeTask}
               open={completeOpen}
               title="确认任务最终完成"
+            />
+            <ConfirmDialog
+              confirmLabel="确认归档"
+              description="这会复用 Control 既有归档动作，把任务状态写为“已归档”；不会创建新的搁置枚举。"
+              onClose={() => setArchiveOpen(false)}
+              onConfirm={archiveTask}
+              open={archiveOpen}
+              title="确认归档任务"
             />
           </>
         )}
@@ -679,7 +753,9 @@ export function ProjectDetail({
   focusWorkId?: string | null
   gatewayState: string
   localAccess: LocalDeliverableAccess
-  mutationTransport: WorkspaceTaskMutationTransport & WorkspaceProductionActionTransport
+  mutationTransport: WorkspaceTaskMutationTransport &
+    WorkspaceProductionActionTransport &
+    Partial<WorkspaceIntakeMutationTransport>
   onBack: () => void
   onClearFocus?: () => void
   onNavigateFocus?: (workId: string, panel: WorkspaceFocusPanel) => void
@@ -906,7 +982,9 @@ export function ProjectDetail({
 
       <TaskInspector
         deliverables={model.deliverables}
+        duplicateEvidence={result.data.snapshot.duplicateEvidence}
         focusSourceAudit={focusPanel === 'source' && focusWorkId === selectedTask?.id}
+        ingestEvents={result.data.snapshot.ingestEvents}
         mutationTransport={mutationTransport}
         onClose={() => {
           setSelectedTaskId(null)

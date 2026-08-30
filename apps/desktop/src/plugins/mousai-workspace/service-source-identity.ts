@@ -1,4 +1,4 @@
-import type { DomainSource, Task } from './domain'
+import type { CanonicalDuplicateEvidence, DomainSource, IngestEvent, Task } from './domain'
 
 export type SourceType = 'feishu' | 'hermes_session' | 'manual' | 'qq' | 'unknown' | 'wechat' | 'workspace'
 export type DuplicateState = 'independent' | 'merged' | 'possible' | 'unknown'
@@ -27,7 +27,8 @@ export interface IngestAuditModel {
   readonly assignedToProject: boolean
   readonly sourceMerged: boolean | null
   readonly duplicate: DuplicateEvidence
-  readonly historyAvailable: false
+  readonly historyAvailable: boolean
+  readonly events: readonly IngestEvent[]
 }
 
 export const SOURCE_LABELS: Readonly<Record<SourceType, string>> = {
@@ -79,6 +80,10 @@ function fallbackType(system: DomainSource): SourceType {
 }
 
 export function buildSourceIdentity(task: Task): SourceIdentity {
+  if (task.sourceIdentity) {
+    return task.sourceIdentity
+  }
+
   const sourceType = exactOriginType(task.origin) ?? fallbackType(task.source.system)
 
   return {
@@ -99,57 +104,46 @@ export function duplicateStateFromCanonical(value: unknown): DuplicateState {
   return 'unknown'
 }
 
-export function compareDuplicateEvidence(left: Task, right: Task): DuplicateEvidence {
-  if (left.id === right.id) {
-    return { state: 'merged', relatedWorkIds: [left.id], reason: '同一 canonical WORK-ID' }
-  }
+export function duplicateEvidenceForTask(
+  task: Task,
+  evidence: readonly CanonicalDuplicateEvidence[]
+): DuplicateEvidence {
+  const canonical = evidence.find(item => item.workId === task.id)
 
-  if (
-    left.source.recordId &&
-    right.source.recordId &&
-    left.source.system === right.source.system &&
-    left.source.recordId === right.source.recordId
-  ) {
-    return {
-      state: 'possible',
-      relatedWorkIds: [right.id],
-      reason: '两个 WORK-ID 指向同一 canonical source reference'
-    }
-  }
-
-  return { state: 'unknown', relatedWorkIds: [], reason: null }
-}
-
-export function duplicateEvidenceForTask(task: Task, tasks: readonly Task[]): DuplicateEvidence {
-  const matches = tasks
-    .filter(candidate => candidate.id !== task.id)
-    .map(candidate => compareDuplicateEvidence(task, candidate))
-    .filter(evidence => evidence.state !== 'unknown')
-
-  if (!matches.length) {
+  if (!canonical) {
     return { state: 'unknown', relatedWorkIds: [], reason: null }
   }
 
   return {
-    state: 'possible',
-    relatedWorkIds: [...new Set(matches.flatMap(match => match.relatedWorkIds))],
-    reason: '存在相同 canonical source reference；未执行标题相似度判断'
+    state: canonical.state,
+    relatedWorkIds: canonical.relatedWorkIds,
+    reason:
+      canonical.evidence
+        .map(item => item.reference)
+        .filter(Boolean)
+        .join('；') || null
   }
 }
 
-export function buildIngestAudit(task: Task, tasks: readonly Task[]): IngestAuditModel {
+export function buildIngestAudit(
+  task: Task,
+  ingestEvents: readonly IngestEvent[],
+  duplicateEvidence: readonly CanonicalDuplicateEvidence[]
+): IngestAuditModel {
   const identity = buildSourceIdentity(task)
-  const duplicate = duplicateEvidenceForTask(task, tasks)
+  const duplicate = duplicateEvidenceForTask(task, duplicateEvidence)
+  const events = ingestEvents.filter(event => event.workId === task.id)
 
   return {
     workId: task.id,
     identity,
-    automaticExtraction: null,
-    extractionState: null,
+    automaticExtraction: events.some(event => event.type === 'extracted') ? true : null,
+    extractionState: events.some(event => event.type === 'extracted') ? '已提取' : null,
     manuallyCreated: identity.sourceType === 'manual' ? true : null,
     assignedToProject: Boolean(task.projectRef),
-    sourceMerged: duplicate.state === 'merged' ? true : null,
+    sourceMerged: events.some(event => event.type === 'merged') || duplicate.state === 'merged' ? true : null,
     duplicate,
-    historyAvailable: false
+    historyAvailable: events.length > 0,
+    events
   }
 }

@@ -48,7 +48,7 @@ export function buildUnifiedInbox(snapshot: WorkspaceSnapshot): readonly Unified
         sourceIdentity: buildSourceIdentity(task),
         confidence: null,
         extractionState: null,
-        duplicate: duplicateEvidenceForTask(task, snapshot.tasks),
+        duplicate: duplicateEvidenceForTask(task, snapshot.duplicateEvidence ?? []),
         waiting: waitingReason(task, review)
       }
     })

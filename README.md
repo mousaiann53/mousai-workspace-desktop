@@ -6,6 +6,8 @@
 
 > **Mousai Workspace Desktop fork:** the `feature/v1-s4-review-cost-foundation` branch adds canonical-data-only Review, Plan vs Actual, evidence-bounded AI contribution, Cost/Provider/Security, after-work, Project Review, Backup, Release Readiness, and Settings foundations on top of the accepted V1-S3 Desktop. Missing typed contracts remain visibly unavailable and are recorded in [`docs/V1-S4-CONTRACT-GAPS.md`](docs/V1-S4-CONTRACT-GAPS.md). This is a Desktop engineering checkpoint, not an overall V1-S4 PASS claim.
 
+> **V1-S3 engineering integration:** `feature/v1-s3-intake-live` connects canonical source identity, ingest audit, duplicate evidence/merge, work scope and typed triage through the existing authenticated Hermes plugin boundary. Notification routing and canonical source health remain deferred; this does not claim overall V1-S3 product acceptance.
+
 <p align="center">
   <a href="https://hermes-agent.nousresearch.com/">Hermes Agent</a> | <a href="https://hermes-agent.nousresearch.com/">Hermes Desktop</a>
 </p>

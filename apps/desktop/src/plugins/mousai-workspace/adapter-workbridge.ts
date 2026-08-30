@@ -68,6 +68,8 @@ function adaptJob(candidate: unknown, issues: AdapterIssue[], seen: Set<string>)
   return {
     id,
     revision: null,
+    intakeRevision: null,
+    sourceIdentity: null,
     title,
     typeLabel: asTrimmedText(candidate.task_type),
     projectRef: asTrimmedText(candidate.project),

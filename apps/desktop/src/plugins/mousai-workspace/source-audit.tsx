@@ -1,4 +1,4 @@
-import type { Task } from './domain'
+import type { CanonicalDuplicateEvidence, IngestEvent, Task } from './domain'
 import { buildIngestAudit, SOURCE_LABELS } from './service-source-identity'
 
 function display(value: boolean | null | string): string {
@@ -13,8 +13,16 @@ function display(value: boolean | null | string): string {
   return value?.trim() || '未设置'
 }
 
-export function SourceAudit({ task, tasks }: { task: Task; tasks: readonly Task[] }) {
-  const audit = buildIngestAudit(task, tasks)
+export function SourceAudit({
+  duplicateEvidence,
+  ingestEvents,
+  task
+}: {
+  duplicateEvidence: readonly CanonicalDuplicateEvidence[]
+  ingestEvents: readonly IngestEvent[]
+  task: Task
+}) {
+  const audit = buildIngestAudit(task, ingestEvents, duplicateEvidence)
 
   return (
     <section aria-label="来源 / 摄取记录" className="mt-5 border-t border-(--ui-stroke-quaternary) pt-4">
@@ -61,8 +69,18 @@ export function SourceAudit({ task, tasks }: { task: Task; tasks: readonly Task[
       </dl>
       {!audit.historyAvailable && (
         <p className="mt-3 rounded-md bg-foreground/4 px-3 py-2 text-[0.6875rem] text-(--ui-text-tertiary)">
-          ingestEvents contract unavailable；仅展示当前 canonical 来源事实，没有伪造摄取时间线。
+          当前任务没有 canonical ingest event；仅展示现有来源事实，没有回填或伪造历史。
         </p>
+      )}
+      {audit.events.length > 0 && (
+        <ol aria-label="摄取事件" className="mt-3 space-y-2">
+          {audit.events.map(event => (
+            <li className="rounded-md bg-foreground/4 px-3 py-2 text-[0.6875rem]" key={event.eventId}>
+              <span className="font-medium">{event.type}</span> · {event.occurredAt} · {event.actor}
+              {event.reason ? ` · ${event.reason}` : ''}
+            </li>
+          ))}
+        </ol>
       )}
     </section>
   )

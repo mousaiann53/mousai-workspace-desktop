@@ -1,7 +1,10 @@
-import { Button, Codicon, useQuery } from '@hermes/plugin-sdk'
+import { Button, Codicon, Input, useQuery } from '@hermes/plugin-sdk'
+import { useState } from 'react'
 
+import type { IntakeSourceType, WorkScope } from './domain'
 import type { IntakeSurface } from './intake-contracts'
 import { EMPTY_NOTIFICATION_READ_MODEL, sourceHealthFromSnapshot, WORK_SCOPE_ENTRIES } from './intake-contracts'
+import type { WorkspaceIntakeMutationTransport } from './service-intake-mutation'
 import { readWorkspaceSnapshot, type WorkspaceReadTransport } from './service-workspace-read'
 
 const SURFACES: readonly { id: IntakeSurface; label: string }[] = [
@@ -52,23 +55,135 @@ function ContractUnavailable({ children, title }: { children: string; title: str
   )
 }
 
-function WorkScopeView() {
+function WorkScopeView({
+  gatewayState,
+  transport
+}: {
+  gatewayState: string
+  transport: WorkspaceReadTransport & Partial<WorkspaceIntakeMutationTransport>
+}) {
+  const result = useQuery({
+    queryKey: ['mousai-workspace', 'intake-work-scope', transport.scope],
+    queryFn: ({ signal }) => readWorkspaceSnapshot(transport, { signal }),
+    enabled: gatewayState === 'open',
+    retry: false,
+    staleTime: 0
+  })
+
+  const [sourceType, setSourceType] = useState<Exclude<IntakeSourceType, 'unknown'>>('workspace')
+  const [scopeId, setScopeId] = useState('')
+  const [label, setLabel] = useState('')
+  const [state, setState] = useState<WorkScope['state']>('approval_required')
+  const [pending, setPending] = useState(false)
+  const [message, setMessage] = useState<string | null>(null)
+  const scopes = result.data?.snapshot.workScope ?? []
+
+  async function saveScope() {
+    const cleanScopeId = scopeId.trim()
+    const cleanLabel = label.trim()
+
+    if (!cleanScopeId || !cleanLabel || pending || !transport.setWorkScope) {
+      return
+    }
+    const current = scopes.find(item => item.sourceType === sourceType && item.scopeId === cleanScopeId)
+    setPending(true)
+    setMessage(null)
+
+    try {
+      await transport.setWorkScope({
+        sourceType,
+        scopeId: cleanScopeId,
+        state,
+        label: cleanLabel,
+        expectedRevision: current?.revision ?? 0,
+        clientRequestId: `desktop:intake-scope:${crypto.randomUUID()}`,
+        actor: 'Mousai'
+      })
+      await result.refetch()
+      setMessage('范围已由服务端保存并重新读取。')
+    } catch {
+      setMessage('范围保存失败；本地未伪造或覆盖权威状态。')
+    } finally {
+      setPending(false)
+    }
+  }
+
   return (
     <div className="space-y-4">
-      <ContractUnavailable title="来源 allowlist 尚无权威 contract">
-        当前只显示范围候选，不读取浏览器或 localStorage，也不把这些项目保存为后端事实。写入能力保持关闭。
-      </ContractUnavailable>
+      <p className="text-xs leading-5 text-(--ui-text-tertiary)">
+        这里读取并修改 Control 的 canonical work scope；Desktop 不使用 localStorage 冒充摄取政策。
+      </p>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {WORK_SCOPE_ENTRIES.map(entry => (
-          <article className="rounded-lg border border-(--ui-stroke-quaternary) p-4" key={entry.sourceType}>
-            <h3 className="text-sm font-medium">{entry.label}</h3>
-            <p className="mt-2 text-xs text-(--ui-text-tertiary)">未配置 · 等待 typed work scope contract</p>
-            <Button className="mt-4" disabled size="sm" variant="secondary">
-              配置范围
-            </Button>
-          </article>
-        ))}
+        {scopes.length
+          ? scopes.map(entry => (
+              <article
+                className="rounded-lg border border-(--ui-stroke-quaternary) p-4"
+                key={`${entry.sourceType}:${entry.scopeId}`}
+              >
+                <h3 className="text-sm font-medium">{entry.label}</h3>
+                <p className="mt-2 break-all text-xs text-(--ui-text-tertiary)">
+                  {entry.sourceType} · {entry.scopeId} · {entry.state} · v{entry.revision}
+                </p>
+              </article>
+            ))
+          : WORK_SCOPE_ENTRIES.map(entry => (
+              <article className="rounded-lg border border-(--ui-stroke-quaternary) p-4" key={entry.sourceType}>
+                <h3 className="text-sm font-medium">{entry.label}</h3>
+                <p className="mt-2 text-xs text-(--ui-text-tertiary)">未配置</p>
+              </article>
+            ))}
       </div>
+      <section className="space-y-3 rounded-lg border border-(--ui-stroke-quaternary) p-4">
+        <h3 className="text-sm font-medium">配置一个明确范围</h3>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <select
+            aria-label="来源类型"
+            className="h-9 rounded-md border border-(--ui-stroke-quaternary) bg-transparent px-2 text-xs"
+            onChange={event => setSourceType(event.target.value as Exclude<IntakeSourceType, 'unknown'>)}
+            value={sourceType}
+          >
+            {WORK_SCOPE_ENTRIES.filter(item => item.sourceType !== 'unknown').map(item => (
+              <option key={item.sourceType} value={item.sourceType}>
+                {item.label}
+              </option>
+            ))}
+          </select>
+          <select
+            aria-label="范围状态"
+            className="h-9 rounded-md border border-(--ui-stroke-quaternary) bg-transparent px-2 text-xs"
+            onChange={event => setState(event.target.value as WorkScope['state'])}
+            value={state}
+          >
+            <option value="enabled">enabled</option>
+            <option value="disabled">disabled</option>
+            <option value="approval_required">approval_required</option>
+          </select>
+          <Input
+            aria-label="Scope ID"
+            onChange={event => setScopeId(event.target.value)}
+            placeholder="Scope ID"
+            value={scopeId}
+          />
+          <Input
+            aria-label="范围名称"
+            onChange={event => setLabel(event.target.value)}
+            placeholder="范围名称"
+            value={label}
+          />
+        </div>
+        <Button
+          disabled={pending || !scopeId.trim() || !label.trim() || !transport.setWorkScope}
+          onClick={() => void saveScope()}
+          size="sm"
+        >
+          {pending ? '保存中' : '保存范围'}
+        </Button>
+        {message && (
+          <p className="text-xs text-(--ui-text-tertiary)" role="status">
+            {message}
+          </p>
+        )}
+      </section>
     </div>
   )
 }
@@ -156,10 +271,10 @@ export function IntakeAuxiliarySurface({
 }: {
   gatewayState: string
   surface: Exclude<IntakeSurface, 'inbox'>
-  transport: WorkspaceReadTransport
+  transport: WorkspaceReadTransport & Partial<WorkspaceIntakeMutationTransport>
 }) {
   if (surface === 'scope') {
-    return <WorkScopeView />
+    return <WorkScopeView gatewayState={gatewayState} transport={transport} />
   }
 
   if (surface === 'notifications') {

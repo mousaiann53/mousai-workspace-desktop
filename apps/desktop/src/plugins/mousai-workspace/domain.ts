@@ -9,6 +9,61 @@ export type ProjectType = 'administrative' | 'creative' | 'other' | 'research' |
 export type WorkHorizon = 'long' | 'medium' | 'short' | 'unset'
 export type Ownership = 'personal' | 'team' | 'unset'
 
+export type IntakeSourceType = 'feishu' | 'hermes_session' | 'manual' | 'qq' | 'unknown' | 'wechat' | 'workspace'
+
+export interface IntakeSourceIdentity {
+  readonly sourceType: IntakeSourceType
+  readonly sourceId: string | null
+  readonly channel: string | null
+  readonly displayName: string | null
+  readonly originReference: string | null
+  readonly receivedAt: string | null
+}
+
+export interface IngestEvent {
+  readonly eventId: string
+  readonly workId: string
+  readonly type: 'assigned' | 'extracted' | 'merged' | 'received'
+  readonly occurredAt: string
+  readonly actor: string
+  readonly sourceReference: string | null
+  readonly revision: number
+  readonly mergedWorkId: string | null
+  readonly reason: string | null
+}
+
+export interface CanonicalDuplicateEvidence {
+  readonly workId: string
+  readonly state: 'independent' | 'merged' | 'possible' | 'unknown'
+  readonly relatedWorkIds: readonly string[]
+  readonly evidence: readonly {
+    readonly kind: 'manual_review' | 'same_source_reference'
+    readonly reference: string | null
+    readonly actor: string | null
+    readonly occurredAt: string | null
+  }[]
+  readonly revision: number
+}
+
+export interface WorkScope {
+  readonly sourceType: Exclude<IntakeSourceType, 'unknown'>
+  readonly scopeId: string
+  readonly state: 'approval_required' | 'disabled' | 'enabled'
+  readonly label: string
+  readonly updatedAt: string
+  readonly revision: number
+}
+
+export interface WorkScopeEvent {
+  readonly eventId: string
+  readonly sourceType: Exclude<IntakeSourceType, 'unknown'>
+  readonly scopeId: string
+  readonly state: WorkScope['state']
+  readonly occurredAt: string
+  readonly actor: string
+  readonly revision: number
+}
+
 export interface CourseProfile {
   readonly audience: string | null
   readonly assessmentMethod: string | null
@@ -74,6 +129,8 @@ export type WorkBridgeState =
 export interface Task {
   readonly id: string
   readonly revision: string | null
+  readonly intakeRevision?: string | null
+  readonly sourceIdentity?: IntakeSourceIdentity | null
   readonly title: string
   readonly typeLabel: string | null
   readonly projectRef: string | null
@@ -262,6 +319,11 @@ export interface WorkspaceSnapshot {
   readonly fixedEvents?: readonly ScheduleBlock[]
   readonly planningProposals?: readonly PlanningProposal[]
   readonly planningEvents?: readonly PlanningEvent[]
+  /** Canonical Intake Core projections. Optional only for legacy fixtures. */
+  readonly ingestEvents?: readonly IngestEvent[]
+  readonly duplicateEvidence?: readonly CanonicalDuplicateEvidence[]
+  readonly workScope?: readonly WorkScope[]
+  readonly workScopeEvents?: readonly WorkScopeEvent[]
   readonly loadedAt: string
 }
 
