@@ -1,7 +1,7 @@
-import { Button, useQuery } from '@hermes/plugin-sdk'
+import { Button, Input, useQuery, useQueryClient } from '@hermes/plugin-sdk'
 import { useMemo, useState } from 'react'
 
-import type { Project, WorkspaceSnapshot } from './domain'
+import type { BackupStatusRecord, Project, WorkspaceSnapshot } from './domain'
 import { PlanningReview } from './planning-review'
 import {
   buildAiContribution,
@@ -11,6 +11,8 @@ import {
   RELEASE_READINESS_FOUNDATION,
   type ReviewScope
 } from './service-review-cost'
+import { WorkspaceSettingsError } from './service-settings'
+import type { WorkspaceSettingsTransport } from './service-settings'
 import {
   readWorkspaceSnapshot,
   type WorkspaceReadTransport,
@@ -193,73 +195,175 @@ function ReviewCenter({ snapshot }: { snapshot: WorkspaceSnapshot }) {
   )
 }
 
-const COST_FIELDS = [
-  'requests',
-  'tokens',
-  'estimated_cost',
-  'actual_cost',
-  'currency',
-  'credit_remaining',
-  'reset_at',
-  'credit_expires_at'
-] as const
+function formatMinutes(value: number | null): string {
+  return value === null ? '未设置' : `${value} 分钟`
+}
 
-function CostCenter() {
-  return (
-    <div className="space-y-4">
+function CostCenter({ snapshot }: { snapshot: WorkspaceSnapshot }) {
+  if (!snapshot.providerUsage || !snapshot.usageLedger) {
+    return (
       <FoundationState
-        copy="usageLedger / costAttribution 尚未进入 canonical snapshot。Desktop 不读取 Provider Secret、不请求 billing API，也不扫描日志造成本事实。"
+        copy="usageLedger 尚未进入 canonical snapshot。Desktop 不读取 Provider Secret、不请求 billing API，也不扫描日志造成本事实。"
         title="AI 用量与成本 unavailable"
       />
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {['今日', '7 日', '当前周期', '按 Provider / Model / Agent / Project / WORK-ID'].map(period => (
-          <section className="rounded-lg border border-(--ui-stroke-quaternary) p-4" key={period}>
-            <h2 className="text-sm font-medium">{period}</h2>
-            <dl className="mt-3 space-y-2">
-              {COST_FIELDS.map(field => (
-                <div className="flex justify-between gap-3 text-[0.6875rem]" key={field}>
-                  <dt className="text-(--ui-text-quaternary)">{field}</dt>
-                  <dd>未设置</dd>
-                </div>
-              ))}
-            </dl>
-          </section>
-        ))}
-      </div>
+    )
+  }
+
+  const totalTokens = snapshot.usageLedger.reduce((sum, entry) => sum + entry.totalTokens, 0)
+  const totalRequests = snapshot.usageLedger.reduce((sum, entry) => sum + entry.requests, 0)
+
+  return (
+    <div className="space-y-4">
+      <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Metric label="Ledger 条目（快照内）" value={snapshot.usageLedger.length} />
+        <Metric label="Ledger 条目（全量）" value={snapshot.usageLedgerTotal ?? null} />
+        <Metric label="请求合计" value={totalRequests} />
+        <Metric label="Token 合计" value={totalTokens} />
+      </dl>
+      <section className="rounded-lg border border-(--ui-stroke-quaternary) p-4">
+        <h2 className="text-sm font-medium">按 Provider / Model 的实际用量（近 30 日）</h2>
+        {snapshot.providerUsage.length ? (
+          <ul className="mt-3 space-y-2">
+            {snapshot.providerUsage.slice(0, 20).map(rollup => (
+              <li
+                className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-(--ui-stroke-quaternary) p-3 text-[0.6875rem]"
+                key={`${rollup.periodStart}:${rollup.provider}:${rollup.model}:${rollup.workId ?? ''}`}
+              >
+                <span className="font-medium">
+                  {rollup.provider} · {rollup.model}
+                  {rollup.workId ? ` · ${rollup.workId}` : ''}
+                </span>
+                <span className="text-(--ui-text-tertiary)">
+                  {rollup.periodStart.slice(0, 10)} · {rollup.requests} 请求 · {rollup.tokens} tokens ·
+                  实际计数（无成本换算）
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-3 text-xs text-(--ui-text-quaternary)">
+            Ledger 目前没有真实用量条目；等待网关按 ingestion 契约写入。
+          </p>
+        )}
+        <p className="mt-3 text-[0.6875rem] text-(--ui-text-tertiary)">
+          costAttribution 保持不可用：没有核准的定价来源，token 数不等于账单。
+        </p>
+      </section>
     </div>
   )
 }
 
-function ProviderCenter() {
-  return (
-    <FoundationState
-      copy="当前 snapshot 没有 canonical providerUsage / providerCredit。未写死 Gemini、DeepSeek 或任何赠金额度，也没有把配置中出现过的 Provider 当成健康事实。"
-      title="Provider 状态 unavailable"
-    />
-  )
-}
+function ProviderCenter({ snapshot }: { snapshot: WorkspaceSnapshot }) {
+  if (!snapshot.providerUsage) {
+    return (
+      <FoundationState
+        copy="当前 snapshot 没有 canonical providerUsage / providerCredit。未写死 Gemini、DeepSeek 或任何赠金额度，也没有把配置中出现过的 Provider 当成健康事实。"
+        title="Provider 状态 unavailable"
+      />
+    )
+  }
 
-function SecurityCenter() {
-  return (
-    <FoundationState
-      copy="securityAlerts contract 尚不可用。Desktop 不读取或吊销 Key，不根据本地日志自行判定消耗暴涨、陌生模型或 Secret 泄露。"
-      title="AI 用量安全告警 unavailable"
-    />
-  )
-}
+  const byProvider = new Map<string, { requests: number; tokens: number }>()
 
-function BackupCenter() {
+  for (const rollup of snapshot.providerUsage) {
+    const current = byProvider.get(rollup.provider) ?? { requests: 0, tokens: 0 }
+    current.requests += rollup.requests
+    current.tokens += rollup.tokens
+    byProvider.set(rollup.provider, current)
+  }
+
   return (
     <div className="space-y-4">
-      <FoundationState
-        copy="backupStatus contract 尚不可用。Desktop 没有复制数据库、扫描用户目录、备份 Secret 或创建云存储。"
-        title="备份与恢复状态 unavailable"
-      />
-      <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-        {['Latest backup', 'Backup state', 'Last restore test', 'Protected components', 'Last error'].map(label => (
-          <Metric key={label} label={label} value={null} />
+      <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {[...byProvider.entries()].map(([provider, totals]) => (
+          <Metric
+            key={provider}
+            label={`${provider} · requests / tokens`}
+            value={`${totals.requests} / ${totals.tokens}`}
+          />
         ))}
+        {byProvider.size === 0 && <Metric label="Provider 用量" value={null} />}
       </dl>
+      <FoundationState
+        copy="providerCredit 保持不可用：没有核准的 billing/credit 适配器，不猜测赠余额。"
+        title="Credit unavailable"
+      />
+    </div>
+  )
+}
+
+function SecurityCenter({ snapshot }: { snapshot: WorkspaceSnapshot }) {
+  if (!snapshot.securityAlerts) {
+    return (
+      <FoundationState
+        copy="securityAlerts contract 尚不可用。Desktop 不读取或吊销 Key，不根据本地日志自行判定消耗暴涨、陌生模型或 Secret 泄露。"
+        title="AI 用量安全告警 unavailable"
+      />
+    )
+  }
+
+  const alerts = snapshot.securityAlerts
+
+  return (
+    <div className="space-y-3">
+      {alerts.length ? (
+        <ul className="space-y-2">
+          {alerts.map(alert => (
+            <li className="rounded-md border border-(--ui-stroke-quaternary) p-3" key={alert.alertId}>
+              <div className="flex flex-wrap justify-between gap-2 text-xs">
+                <span className="font-medium">
+                  {alert.type}
+                  {alert.provider ? ` · ${alert.provider}` : ''}
+                </span>
+                <span className="text-[0.6875rem] text-(--ui-text-tertiary)">
+                  {alert.severity} · {alert.state}
+                </span>
+              </div>
+              <p className="mt-2 text-[0.6875rem] text-(--ui-text-tertiary)">{alert.safeSummary}</p>
+              <p className="mt-1 text-[0.6875rem] text-(--ui-text-quaternary)">{alert.detectedAt}</p>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-xs text-(--ui-text-tertiary)">
+          当前没有 canonical 告警。安全事实只来自真实 ledger 异常检测与可信安全事件。
+        </p>
+      )}
+    </div>
+  )
+}
+
+function BackupCenter({ snapshot }: { snapshot: WorkspaceSnapshot }) {
+  const backup: BackupStatusRecord | null = snapshot.backupStatus ?? null
+
+  if (!backup) {
+    return (
+      <div className="space-y-4">
+        <FoundationState
+          copy="backupStatus contract 尚不可用。Desktop 没有复制数据库、扫描用户目录、备份 Secret 或创建云存储。"
+          title="备份与恢复状态 unavailable"
+        />
+        <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          {['Latest backup', 'Backup state', 'Last restore test', 'Protected components', 'Last error'].map(label => (
+            <Metric key={label} label={label} value={null} />
+          ))}
+        </dl>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-3">
+      <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <Metric label="Latest backup" value={backup.latestBackupAt} />
+        <Metric label="Backup state" value={backup.state} />
+        <Metric label="Last restore test" value={backup.lastRestoreTestAt} />
+        <Metric label="Protected components" value={backup.protectedComponents.length || null} />
+        <Metric label="Last error" value={backup.lastErrorCode} />
+      </dl>
+      <p className="text-[0.6875rem] text-(--ui-text-tertiary)">
+        状态 unknown 表示尚无核准的备份/恢复系统事实；不伪造备份成功。checked_at：{backup.checkedAt}
+      </p>
     </div>
   )
 }
@@ -285,20 +389,125 @@ function ReleaseCenter() {
   )
 }
 
-function SettingsCenter() {
+function SettingsCenter({ snapshot, transport }: { snapshot: WorkspaceSnapshot; transport: WorkspaceSettingsTransport }) {
+  const queryClient = useQueryClient()
+  const settings = snapshot.systemSettings ?? null
+  const [workdayEnd, setWorkdayEnd] = useState('')
+  const [nightBudget, setNightBudget] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  if (!settings) {
+    return (
+      <div className="space-y-4">
+        <FoundationState
+          copy="systemSettings contract 尚不可用。以下值不写入 localStorage，也不作为系统事实。"
+          title="设置只读 / unavailable"
+        />
+        <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {['18:00 下班线', '夜间自动预算', '默认时区', '通知偏好', '工作来源范围', 'Provider display preferences'].map(
+            label => (
+              <Metric key={label} label={label} value={null} />
+            )
+          )}
+        </dl>
+      </div>
+    )
+  }
+
+  const save = async () => {
+    setError(null)
+    const changes: Record<string, string | number> = {}
+
+    if (workdayEnd.trim()) {
+      changes.workday_end = workdayEnd.trim()
+    }
+
+    if (nightBudget.trim()) {
+      const parsed = Number(nightBudget)
+
+      if (!Number.isFinite(parsed) || parsed < 0) {
+        setError('夜间预算必须是非负数字。')
+
+        return
+      }
+
+      changes.night_budget = parsed
+    }
+
+    if (!Object.keys(changes).length) {
+      setError('请先填写要修改的设置。')
+
+      return
+    }
+
+    setSaving(true)
+
+    try {
+      await transport.updateSettings({
+        clientRequestId: `settings-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+        expectedRevision: settings.revision,
+        actor: 'Mousai',
+        changes
+      })
+      // Canonical server result → full snapshot refetch (no optimistic truth).
+      await queryClient.invalidateQueries({ queryKey: ['mousai-workspace'] })
+      setWorkdayEnd('')
+      setNightBudget('')
+    } catch (submitError) {
+      const statusCode = submitError instanceof WorkspaceSettingsError ? submitError.statusCode : null
+      setError(
+        statusCode === 409
+          ? '设置已被其他端修改（revision 冲突）；请重试。'
+          : '设置保存失败；未在本地做任何回写。'
+      )
+    } finally {
+      setSaving(false)
+    }
+  }
+
   return (
     <div className="space-y-4">
-      <FoundationState
-        copy="systemSettings contract 尚不可用。以下值不写入 localStorage，也不作为系统事实。"
-        title="设置只读 / unavailable"
-      />
       <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {['18:00 下班线', '夜间自动预算', '默认时区', '通知偏好', '工作来源范围', 'Provider display preferences'].map(
-          label => (
-            <Metric key={label} label={label} value={null} />
-          )
-        )}
+        <Metric label="18:00 下班线（canonical workday_end）" value={settings.workdayEnd} />
+        <Metric label="夜间自动预算" value={settings.nightBudget} />
+        <Metric label="默认时区" value={settings.timezone} />
+        <Metric label="预算币种" value={settings.budgetCurrency} />
+        <Metric label="工作来源范围 revision" value={settings.workScopeRevision} />
+        <Metric label="Settings revision" value={settings.revision} />
       </dl>
+      <section className="rounded-lg border border-(--ui-stroke-quaternary) p-4">
+        <h2 className="text-sm font-medium">类型化设置修改</h2>
+        <p className="mt-1 text-[0.6875rem] text-(--ui-text-quaternary)">
+          仅允许核准字段；服务器端乐观 revision 校验（409 = 冲突），全部改动进入 append-only 审计。
+        </p>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <label className="block text-xs">
+            <span className="mb-1 block text-(--ui-text-tertiary)">workday_end（HH:MM）</span>
+            <Input
+              aria-label="workday_end"
+              className="h-9 w-full"
+              onChange={event => setWorkdayEnd(event.target.value)}
+              placeholder={settings.workdayEnd}
+              value={workdayEnd}
+            />
+          </label>
+          <label className="block text-xs">
+            <span className="mb-1 block text-(--ui-text-tertiary)">night_budget（未设置则留空）</span>
+            <Input
+              aria-label="night_budget"
+              className="h-9 w-full"
+              onChange={event => setNightBudget(event.target.value)}
+              placeholder={settings.nightBudget === null ? '未设置' : String(settings.nightBudget)}
+              value={nightBudget}
+            />
+          </label>
+        </div>
+        {error && <p className="mt-2 text-xs text-red-500">{error}</p>}
+        <Button className="mt-3" disabled={saving} onClick={() => void save()} size="sm">
+          {saving ? '保存中…' : '保存设置'}
+        </Button>
+      </section>
     </div>
   )
 }
@@ -314,32 +523,35 @@ export function ReviewCostCenter({
   onNavigate: (surface: ReviewFoundationSurface) => void
   onOpenTask?: Parameters<typeof PlanningReview>[0]['onOpenTask']
   surface: ReviewFoundationSurface
-  transport: WorkspaceReadTransport
+  transport: WorkspaceReadTransport & WorkspaceSettingsTransport
 }) {
   const result = useQuery({
     queryKey: ['mousai-workspace', 'review-cost-center', transport.scope],
     queryFn: ({ signal }) => readWorkspaceSnapshot(transport, { signal }),
-    enabled: gatewayState === 'open' && surface === 'review',
+    enabled: gatewayState === 'open',
     retry: false,
     staleTime: 0
   })
+
+  const hasSnapshot = gatewayState === 'open' && !result.isPending && !result.isError && Boolean(result.data)
+  const snapshot = result.data?.snapshot ?? null
 
   let content
 
   if (surface === 'brief') {
     content = <PlanningReview gatewayState={gatewayState} onOpenTask={onOpenTask} transport={transport} />
   } else if (surface === 'cost') {
-    content = <CostCenter />
+    content = snapshot ? <CostCenter snapshot={snapshot} /> : <FoundationLoadingOrError result={result} surface="cost" />
   } else if (surface === 'providers') {
-    content = <ProviderCenter />
+    content = snapshot ? <ProviderCenter snapshot={snapshot} /> : <FoundationLoadingOrError result={result} surface="providers" />
   } else if (surface === 'security') {
-    content = <SecurityCenter />
+    content = snapshot ? <SecurityCenter snapshot={snapshot} /> : <FoundationLoadingOrError result={result} surface="security" />
   } else if (surface === 'backup') {
-    content = <BackupCenter />
+    content = snapshot ? <BackupCenter snapshot={snapshot} /> : <FoundationLoadingOrError result={result} surface="backup" />
+  } else if (surface === 'settings') {
+    content = snapshot ? <SettingsCenter snapshot={snapshot} transport={transport} /> : <FoundationLoadingOrError result={result} surface="settings" />
   } else if (surface === 'release') {
     content = <ReleaseCenter />
-  } else if (surface === 'settings') {
-    content = <SettingsCenter />
   } else if (gatewayState !== 'open') {
     content = <FoundationState copy="Gateway 恢复后重新读取 canonical snapshot。" title="等待 Gateway 连接" />
   } else if (result.isPending || result.isFetching) {
@@ -355,6 +567,8 @@ export function ReviewCostCenter({
   } else {
     content = <ReviewCenter snapshot={result.data.snapshot} />
   }
+
+  void hasSnapshot
 
   return (
     <div className="space-y-5">
@@ -376,6 +590,27 @@ export function ReviewCostCenter({
       </nav>
       {content}
     </div>
+  )
+}
+
+function FoundationLoadingOrError({
+  result,
+  surface
+}: {
+  result: { isPending: boolean; isFetching: boolean; isError: boolean; error: unknown }
+  surface: string
+}): ReturnType<typeof FoundationState> {
+  if (result.isPending || result.isFetching) {
+    return <FoundationState copy="正在读取 canonical snapshot。" title="正在生成" />
+  }
+
+  const unavailable = result.error instanceof WorkspaceTransportUnavailableError
+
+  return (
+    <FoundationState
+      copy={unavailable ? '安全只读链路尚未接通；未展示缓存或 Demo。' : `${surface} 读取失败；未展示过期事实。`}
+      title={unavailable ? '数据 unavailable' : '读取失败'}
+    />
   )
 }
 

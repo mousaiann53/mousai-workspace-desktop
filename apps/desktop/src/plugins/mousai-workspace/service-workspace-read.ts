@@ -2,6 +2,7 @@ import { adaptIntakeSnapshot } from './adapter-intake'
 import { adaptManifest } from './adapter-manifest'
 import { adaptPlanningSnapshot } from './adapter-planning'
 import { adaptProductionReviews } from './adapter-production-review'
+import { adaptS4Snapshot, type RawS4Snapshot } from './adapter-s4'
 import { adaptWorkBridgeJobs } from './adapter-workbridge'
 import { adaptWorkDataSnapshot } from './adapter-workdata'
 import type { AdapterIssue, Task, WorkspaceSnapshot } from './domain'
@@ -9,7 +10,7 @@ import type { AdapterIssue, Task, WorkspaceSnapshot } from './domain'
 export const SAFE_READ_TRANSPORT_BLOCKER =
   '当前 Hermes Gateway 未提供 WorkData 项目只读方法；WorkBridge 仅提供带 Token 的任务接口。'
 
-export interface RawWorkspaceReadSnapshot {
+export interface RawWorkspaceReadSnapshot extends RawS4Snapshot {
   readonly workdata: {
     readonly projectRecords: unknown
     readonly taskRecords: unknown
@@ -105,6 +106,8 @@ export async function readWorkspaceSnapshot(
     ? new Date().toISOString()
     : loadedAtCandidate.toISOString()
 
+  const s4 = adaptS4Snapshot(raw)
+
   return {
     snapshot: {
       projects: workdata.data.projects,
@@ -115,6 +118,7 @@ export async function readWorkspaceSnapshot(
       activities: [],
       ...planning.data,
       ...intake.data,
+      ...s4.fields,
       loadedAt
     },
     issues: [
@@ -123,7 +127,8 @@ export async function readWorkspaceSnapshot(
       ...manifestResults.flatMap(result => result.issues),
       ...productionReviews.issues,
       ...planning.issues,
-      ...intake.issues
+      ...intake.issues,
+      ...s4.issues
     ]
   }
 }

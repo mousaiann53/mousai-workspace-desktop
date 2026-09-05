@@ -2,6 +2,7 @@ import type { PluginRestOptions } from '@hermes/plugin-sdk'
 
 import { adaptPlanningSnapshot } from './adapter-planning'
 import { adaptProductionReviews } from './adapter-production-review'
+import { adaptSystemSettings } from './adapter-s4'
 import type { ProductionApprovedScope, ProductionBundleMeta } from './domain'
 import {
   type DuplicateReviewRequest,
@@ -24,6 +25,13 @@ import {
   type WorkspaceProductionActionTransport
 } from './service-production-actions'
 import {
+  settingsFailure,
+  type SettingsUpdateRequest,
+  type SettingsUpdateResult,
+  WorkspaceSettingsError,
+  type WorkspaceSettingsTransport
+} from './service-settings'
+import {
   type TaskCreateInput,
   type TaskEditChanges,
   type TaskMutationMeta,
@@ -45,7 +53,7 @@ interface WorkspaceSnapshotEnvelope {
   readonly tasks: readonly unknown[]
   readonly events: readonly unknown[]
   readonly deliverables: readonly unknown[]
-  readonly productionReviews: readonly unknown[]
+  readonly productionReviews?: readonly unknown[]
   readonly scheduleBlocks: readonly unknown[]
   readonly fixedEvents: readonly unknown[]
   readonly planningProposals: readonly unknown[]
@@ -54,6 +62,19 @@ interface WorkspaceSnapshotEnvelope {
   readonly duplicateEvidence: readonly unknown[]
   readonly workScope: readonly unknown[]
   readonly workScopeEvents: readonly unknown[]
+  // V1-S4 canonical read models (optional: a legacy gateway omits them).
+  readonly reviewHistory?: readonly unknown[]
+  readonly aiContribution?: readonly unknown[]
+  readonly executionTiming?: readonly unknown[]
+  readonly artifactRevisions?: readonly unknown[]
+  readonly systemSettings?: unknown
+  readonly usageLedger?: readonly unknown[]
+  readonly usageLedgerTotal?: unknown
+  readonly providerUsage?: readonly unknown[]
+  readonly securityAlerts?: readonly unknown[]
+  readonly backupStatus?: unknown
+  readonly notifications?: readonly unknown[]
+  readonly sourceHealth?: readonly unknown[]
 }
 
 export class WorkspaceSnapshotContractError extends Error {
@@ -324,7 +345,8 @@ export function createPluginWorkspaceReadTransport(
   WorkspaceTaskMutationTransport &
   WorkspaceProductionActionTransport &
   WorkspacePlanningMutationTransport &
-  WorkspaceIntakeMutationTransport {
+  WorkspaceIntakeMutationTransport &
+  WorkspaceSettingsTransport {
   const timeoutMs = options.timeoutMs ?? WORKSPACE_SNAPSHOT_TIMEOUT_MS
 
   async function mutate(path: string, method: 'PATCH' | 'POST', body: unknown): Promise<TaskMutationResult> {
@@ -410,6 +432,20 @@ export function createPluginWorkspaceReadTransport(
         duplicateEvidence: envelope.duplicateEvidence,
         workScope: envelope.workScope,
         workScopeEvents: envelope.workScopeEvents,
+        // V1-S4: pass through when the gateway supplies them; a legacy
+        // gateway's omission stays an honest absence.
+        reviewHistory: envelope.reviewHistory,
+        aiContribution: envelope.aiContribution,
+        executionTiming: envelope.executionTiming,
+        artifactRevisions: envelope.artifactRevisions,
+        systemSettings: envelope.systemSettings,
+        usageLedger: envelope.usageLedger,
+        usageLedgerTotal: envelope.usageLedgerTotal,
+        providerUsage: envelope.providerUsage,
+        securityAlerts: envelope.securityAlerts,
+        backupStatus: envelope.backupStatus,
+        notifications: envelope.notifications,
+        sourceHealth: envelope.sourceHealth,
         loadedAt: envelope.generatedAt
       }
     },
@@ -563,6 +599,58 @@ export function createPluginWorkspaceReadTransport(
           ...(request.comment ? { comment: request.comment } : {})
         }
       })
+    },
+    async readSettings() {
+      try {
+        const value = await rest<unknown>('/settings', { method: 'GET', timeoutMs })
+
+        if (!isRecord(value) || !isRecord(value.systemSettings)) {
+          throw new WorkspaceSettingsError('Settings response is invalid.', null, 'invalid_response')
+        }
+
+        const settings = adaptSystemSettings(value.systemSettings)
+
+        if (!settings) {
+          throw new WorkspaceSettingsError('Settings response violates the canonical contract.', null, 'invalid_response')
+        }
+
+        return settings
+      } catch (error) {
+        throw settingsFailure(error)
+      }
+    },
+    async updateSettings(request: SettingsUpdateRequest) {
+      try {
+        const value = await rest<unknown>('/settings/update', {
+          method: 'POST',
+          body: {
+            client_request_id: request.clientRequestId,
+            expected_revision: request.expectedRevision,
+            actor: request.actor,
+            changes: request.changes
+          },
+          timeoutMs
+        })
+
+        if (!isRecord(value) || !isRecord(value.settings) || !isRecord(value.settings.systemSettings)) {
+          throw new WorkspaceSettingsError('Settings response is invalid.', null, 'invalid_response')
+        }
+
+        const settings = adaptSystemSettings(value.settings.systemSettings)
+
+        if (!settings) {
+          throw new WorkspaceSettingsError('Settings response violates the canonical contract.', null, 'invalid_response')
+        }
+
+        const result: SettingsUpdateResult = {
+          systemSettings: settings,
+          idempotent: value.settings.idempotent === true
+        }
+
+        return result
+      } catch (error) {
+        throw settingsFailure(error)
+      }
     }
   })
 }

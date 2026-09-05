@@ -324,7 +324,168 @@ export interface WorkspaceSnapshot {
   readonly duplicateEvidence?: readonly CanonicalDuplicateEvidence[]
   readonly workScope?: readonly WorkScope[]
   readonly workScopeEvents?: readonly WorkScopeEvent[]
+  /** Canonical V1-S4 review / cost / safety projections. Optional only for
+   * legacy snapshots; a missing key means the authority is unavailable and
+   * must render as such, never as an empty-but-implied fact. */
+  readonly reviewHistory?: readonly CanonicalReviewEvent[]
+  readonly aiContribution?: readonly AiContributionRecord[]
+  readonly executionTiming?: readonly ExecutionTimingRecord[]
+  readonly artifactRevisions?: readonly ArtifactRevisionRecord[]
+  readonly systemSettings?: SystemSettingsRecord
+  readonly usageLedger?: readonly UsageLedgerEntry[]
+  readonly usageLedgerTotal?: number
+  readonly providerUsage?: readonly ProviderUsageRollup[]
+  readonly providerCredit?: readonly never[]
+  readonly costAttribution?: readonly never[]
+  readonly securityAlerts?: readonly SecurityAlertRecord[]
+  readonly backupStatus?: BackupStatusRecord
+  readonly notifications?: readonly NotificationRecord[]
+  readonly sourceHealth?: readonly SourceHealthRecord[]
   readonly loadedAt: string
+}
+
+export type CanonicalReviewEventType = 'accepted' | 'completed' | 'deadline_changed' | 'reopened' | 'reviewed'
+
+export interface CanonicalReviewEvent {
+  readonly eventId: string
+  readonly workId: string
+  readonly projectId: string | null
+  readonly type: CanonicalReviewEventType
+  readonly occurredAt: string
+  readonly actor: string
+  readonly previousValue: ProductionJsonValue | null
+  readonly nextValue: ProductionJsonValue | null
+  readonly source: 'production_history' | 'task_mutation'
+  readonly revision: number
+}
+
+export type AiContributionState = 'AI_ASSISTED' | 'AI_AUTONOMOUS' | 'AI_PRIMARY' | 'HUMAN' | 'UNKNOWN'
+
+export interface AiContributionRecord {
+  readonly workId: string
+  readonly state: AiContributionState
+  readonly evidenceRefs: readonly string[]
+  readonly assessedBy: string
+  readonly assessedAt: string | null
+  readonly revision: number
+}
+
+export interface ExecutionTimingRecord {
+  readonly workId: string
+  readonly scheduledStart: string | null
+  readonly scheduledEnd: string | null
+  readonly actualStart: string | null
+  readonly actualEnd: string | null
+  readonly actualDurationMinutes: number | null
+  readonly measuredBy: string | null
+  readonly revision: number
+}
+
+export interface ArtifactRevisionFileMeta {
+  readonly filename: string
+  readonly relativePath: string | null
+  readonly extension: string
+  readonly sizeBytes: number
+  readonly sha256: string
+  readonly modifiedAt: string
+}
+
+export interface ArtifactRevisionRecord {
+  readonly workId: string
+  readonly revision: number | null
+  readonly scopeVersion: number | null
+  readonly manifestVersion: string | null
+  readonly producer: string | null
+  readonly acceptance: ProductionAcceptance | null
+  readonly files: readonly ArtifactRevisionFileMeta[] | null
+  readonly recordedAt: string | null
+}
+
+export interface SystemSettingsRecord {
+  readonly workdayEnd: string
+  readonly nightBudget: number | null
+  readonly budgetCurrency: string | null
+  readonly timezone: string
+  readonly notificationPreferences: ProductionJsonValue | null
+  readonly workScopeRevision: number | null
+  readonly providerDisplay: readonly string[] | null
+  readonly revision: number
+}
+
+export interface UsageLedgerEntry {
+  readonly usageId: string
+  readonly occurredAt: string
+  readonly provider: string
+  readonly model: string
+  readonly agent: string | null
+  readonly projectId: string | null
+  readonly workId: string | null
+  readonly requests: number
+  readonly inputTokens: number
+  readonly outputTokens: number
+  readonly totalTokens: number
+  readonly source: string
+}
+
+export interface ProviderUsageRollup {
+  readonly periodStart: string
+  readonly periodEnd: string
+  readonly provider: string
+  readonly model: string
+  readonly agent: string | null
+  readonly projectId: string | null
+  readonly workId: string | null
+  readonly requests: number
+  readonly tokens: number
+  readonly value: null
+  readonly currency: null
+  readonly valueKind: 'actual' | 'estimated'
+}
+
+export type SecurityAlertType =
+  | 'ledger_mismatch'
+  | 'rate_anomaly'
+  | 'secret_exposure'
+  | 'unknown_model'
+  | 'usage_spike'
+
+export interface SecurityAlertRecord {
+  readonly alertId: string
+  readonly type: SecurityAlertType
+  readonly severity: string
+  readonly state: string
+  readonly detectedAt: string
+  readonly provider: string | null
+  readonly workId: string | null
+  readonly safeSummary: string
+}
+
+export interface BackupStatusRecord {
+  readonly latestBackupAt: string | null
+  readonly state: 'failed' | 'healthy' | 'running' | 'unknown'
+  readonly lastRestoreTestAt: string | null
+  readonly lastRestoreTestState: string | null
+  readonly protectedComponents: readonly string[]
+  readonly lastErrorCode: string | null
+  readonly checkedAt: string
+}
+
+export interface NotificationRecord {
+  readonly notificationId: string
+  readonly kind: 'duplicate_possible' | 'task_state'
+  readonly severity: 'high' | 'info'
+  readonly workId: string | null
+  readonly title: string | null
+  readonly state: string | null
+  readonly occurredAt: string | null
+}
+
+export interface SourceHealthRecord {
+  readonly sourceType: string
+  readonly health: 'degraded' | 'healthy' | 'unavailable' | 'unknown'
+  readonly scopeState: string | null
+  readonly reason: string
+  readonly checkedAt: string
 }
 
 export type AdapterIssueCode = 'duplicate_id' | 'invalid_field' | 'invalid_record' | 'missing_id' | 'missing_name'

@@ -1,5 +1,14 @@
-import type { Deliverable } from './domain'
+import type { ArtifactRevisionRecord, Deliverable } from './domain'
 import type { ProductionReviewItem } from './service-production-review'
+
+export interface ArtifactFileMeta {
+  readonly filename: string
+  readonly relativePath: string | null
+  readonly extension: string
+  readonly sizeBytes: number
+  readonly sha256: string
+  readonly modifiedAt: string
+}
 
 export interface ArtifactRevisionSnapshot {
   readonly id: string
@@ -7,7 +16,7 @@ export interface ArtifactRevisionSnapshot {
   readonly scopeVersion: number | null
   readonly manifestVersion: string | null
   readonly producer: string | null
-  readonly files: readonly Deliverable[]
+  readonly files: readonly (ArtifactFileMeta | Deliverable)[]
 }
 
 export type ArtifactChangeState = 'added' | 'changed' | 'removed' | 'unchanged'
@@ -15,15 +24,45 @@ export type ArtifactChangeState = 'added' | 'changed' | 'removed' | 'unchanged'
 export interface ArtifactFileComparison {
   readonly key: string
   readonly state: ArtifactChangeState
-  readonly current: Deliverable | null
-  readonly previous: Deliverable | null
+  readonly current: ArtifactFileMeta | null
+  readonly previous: ArtifactFileMeta | null
 }
 
-function fileMap(files: readonly Deliverable[]): ReadonlyMap<string, Deliverable> {
-  return new Map(files.map(file => [file.relativePath, file]))
+/**
+ * Canonical previous-revision metadata from the Control artifactRevisions
+ * projection. Revisions whose file metadata was never recorded (pre-S4
+ * deliveries; the old WorkData manifest was overwritten) have files: null and
+ * are intentionally absent — comparison stays HOLD for them instead of being
+ * faked.
+ */
+export function historicalArtifactRevisions(
+  workId: string,
+  artifactRevisions?: readonly ArtifactRevisionRecord[]
+): readonly ArtifactRevisionSnapshot[] {
+  if (!artifactRevisions) {
+    return []
+  }
+
+  return artifactRevisions
+    .filter(record => record.workId === workId && record.files !== null && record.files.length > 0)
+    .map(record => ({
+      id: `history:${record.recordedAt ?? 'unset'}:${record.revision ?? 'unset'}:${record.manifestVersion ?? 'unset'}`,
+      revision: record.revision,
+      scopeVersion: record.scopeVersion,
+      manifestVersion: record.manifestVersion,
+      producer: record.producer,
+      files: record.files ?? []
+    }))
+    .toSorted((left, right) => (right.revision ?? 0) - (left.revision ?? 0))
 }
 
-function unchanged(current: Deliverable, previous: Deliverable): boolean {
+function fileMap(files: readonly (ArtifactFileMeta | Deliverable)[]): ReadonlyMap<string, ArtifactFileMeta | Deliverable> {
+  return new Map(
+    files.flatMap(file => (file.relativePath ? [[file.relativePath, file] as const] : []))
+  )
+}
+
+function unchanged(current: ArtifactFileMeta | Deliverable, previous: ArtifactFileMeta | Deliverable): boolean {
   return (
     current.filename === previous.filename &&
     current.sha256 === previous.sha256 &&

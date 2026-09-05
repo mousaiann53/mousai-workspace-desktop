@@ -3,14 +3,25 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { ReviewCostCenter } from './review-cost-center'
+import type { WorkspaceSettingsTransport } from './service-settings'
 import type { WorkspaceReadTransport } from './service-workspace-read'
 
-const transport: WorkspaceReadTransport = {
+const settingsTransport: WorkspaceSettingsTransport = {
+  readSettings: vi.fn(async () => {
+    throw new Error('not available in this fixture')
+  }),
+  updateSettings: vi.fn(async () => {
+    throw new Error('not available in this fixture')
+  })
+}
+
+const transport: WorkspaceReadTransport & WorkspaceSettingsTransport = {
   scope: 'review-cost-test',
   readSnapshot: vi.fn(async () => ({
     workdata: { projectRecords: [], taskRecords: [] },
     loadedAt: '2026-08-30T00:00:00Z'
-  }))
+  })),
+  ...settingsTransport
 }
 
 describe('ReviewCostCenter', () => {
@@ -24,11 +35,10 @@ describe('ReviewCostCenter', () => {
     )
   }
 
-  it('shows honest unavailable cost facts rather than zero values', () => {
+  it('shows honest unavailable cost facts rather than zero values', async () => {
     renderCenter('cost')
 
-    expect(screen.getByText('AI 用量与成本 unavailable')).toBeTruthy()
-    expect(screen.getAllByText('未设置').length).toBeGreaterThan(0)
+    expect(await screen.findByText('AI 用量与成本 unavailable')).toBeTruthy()
     expect(screen.queryByText('¥0')).toBeNull()
   })
 
@@ -52,9 +62,9 @@ describe('ReviewCostCenter', () => {
     ['security', 'AI 用量安全告警 unavailable'],
     ['backup', '备份与恢复状态 unavailable'],
     ['settings', '设置只读 / unavailable']
-  ] as const)('keeps %s honest when its canonical contract is absent', (surface, message) => {
+  ] as const)('keeps %s honest when its canonical contract is absent', async (surface, message) => {
     renderCenter(surface)
-    expect(screen.getByText(message)).toBeTruthy()
+    expect(await screen.findByText(message)).toBeTruthy()
   })
 
   it('renders an honest insufficient-history review state from an empty canonical snapshot', async () => {
@@ -64,11 +74,12 @@ describe('ReviewCostCenter', () => {
   })
 
   it('renders a bounded error state without stale or demo facts', async () => {
-    const failingTransport: WorkspaceReadTransport = {
+    const failingTransport: WorkspaceReadTransport & WorkspaceSettingsTransport = {
       scope: 'review-cost-error',
       readSnapshot: vi.fn(async () => {
         throw new Error('read failed')
-      })
+      }),
+      ...settingsTransport
     }
 
     render(

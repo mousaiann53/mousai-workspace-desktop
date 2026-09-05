@@ -1,6 +1,6 @@
-import type { ProductionReview, Task, WorkspaceSnapshot } from './domain'
+import type { AiContributionState, ProductionReview, Task, WorkspaceSnapshot } from './domain'
 import { planningDateKey } from './service-planning-calendar'
-import { type AiContributionState, buildAiContribution } from './service-review-cost'
+import { buildAiContribution } from './service-review-cost'
 import { waitingReason } from './service-task-views'
 
 export type NightSafetyState = 'AUTO_OK' | 'BLOCKED' | 'HUMAN_REQUIRED'

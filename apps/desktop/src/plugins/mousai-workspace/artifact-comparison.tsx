@@ -1,10 +1,12 @@
 import { useMemo, useState } from 'react'
 
+import type { ArtifactRevisionRecord } from './domain'
 import {
   type ArtifactChangeState,
   type ArtifactRevisionSnapshot,
   compareArtifactRevisions,
-  currentArtifactRevision
+  currentArtifactRevision,
+  historicalArtifactRevisions
 } from './service-artifact-comparison'
 import type { ProductionReviewItem } from './service-production-review'
 
@@ -33,14 +35,29 @@ function RevisionFacts({ label, value }: { label: string; value: ArtifactRevisio
 
 export function ArtifactComparison({
   item,
-  historicalVersions = []
+  historicalVersions = [],
+  historicalRevisions
 }: {
   item: ProductionReviewItem
   historicalVersions?: readonly ArtifactRevisionSnapshot[]
+  /** Canonical artifactRevisions projection; previous-revision file metadata
+   * removes the comparison HOLD when it genuinely exists. */
+  historicalRevisions?: readonly ArtifactRevisionRecord[]
 }) {
   const current = currentArtifactRevision(item)
-  const [selectedId, setSelectedId] = useState(historicalVersions[0]?.id ?? '')
-  const previous = historicalVersions.find(version => version.id === selectedId) ?? historicalVersions[0] ?? null
+
+  const canonicalHistory = useMemo(
+    () => historicalArtifactRevisions(item.task.id, historicalRevisions),
+    [historicalRevisions, item.task.id]
+  )
+
+  const versions = useMemo(
+    () => [...canonicalHistory, ...historicalVersions],
+    [canonicalHistory, historicalVersions]
+  )
+
+  const [selectedId, setSelectedId] = useState('')
+  const previous = versions.find(version => version.id === selectedId) ?? versions[0] ?? null
 
   const comparisons = useMemo(
     () => (current && previous ? compareArtifactRevisions(current, previous) : []),
@@ -58,12 +75,12 @@ export function ArtifactComparison({
           比较基线
           <select
             className="mt-1 block h-8 rounded-md border border-(--ui-stroke-quaternary) bg-(--ui-sidebar-surface-background) px-2 text-xs"
-            disabled={!historicalVersions.length}
+            disabled={!versions.length}
             onChange={event => setSelectedId(event.target.value)}
             value={previous?.id ?? ''}
           >
-            {!historicalVersions.length && <option value="">上一版 Manifest 未提供</option>}
-            {historicalVersions.map(version => (
+            {!versions.length && <option value="">上一版 Manifest 未提供</option>}
+            {versions.map(version => (
               <option key={version.id} value={version.id}>
                 r{display(version.revision)} / {display(version.manifestVersion)}
               </option>

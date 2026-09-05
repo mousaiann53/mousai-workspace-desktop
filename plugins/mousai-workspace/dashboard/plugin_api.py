@@ -39,6 +39,10 @@ WORKBRIDGE_MODULE = Path("/opt/workagent/workbridge-api/workbridge_api.py")
 WORKDATA_ENV_FILE = Path("/var/lib/workagent/workbridge/workbridge.env")
 PLANNING_ROOT = Path("/var/lib/workagent/workbridge/planning")
 INTAKE_ROOT = Path("/var/lib/workagent/workbridge/intake")
+PRODUCTION_ROOT = Path("/var/lib/workagent/workbridge/production")
+SETTINGS_ROOT = Path("/var/lib/workagent/workbridge/settings")
+USAGE_ROOT = Path("/var/lib/workagent/workbridge/usage")
+REVIEW_ROOT = Path("/var/lib/workagent/workbridge/review")
 MAX_PROJECT_RECORDS = 5_000
 MAX_TASK_RECORDS = 10_000
 MAX_COLLECTION_ITEMS = 64
@@ -259,6 +263,33 @@ def _intake_store():
     if store_type is None:
         raise WorkspaceAuthorityUnavailable("Intake authority is unavailable")
     return store_type(str(INTAKE_ROOT))
+
+
+def _workbridge_store(root: Path, module_name: str, store_name: str, label: str):
+    """Access a canonical WorkBridge state store by its module (read or typed
+    command reuse — never a second Desktop database)."""
+    workbridge = _workbridge_module()
+    store_module = getattr(workbridge, module_name, None)
+    store_type = getattr(store_module, store_name, None)
+    if store_type is None:
+        raise WorkspaceAuthorityUnavailable(f"{label} authority is unavailable")
+    return store_type(str(root))
+
+
+def _production_store():
+    return _workbridge_store(PRODUCTION_ROOT, "production_store", "ProductionStore", "Production")
+
+
+def _settings_store():
+    return _workbridge_store(SETTINGS_ROOT, "settings_store", "SettingsStore", "Settings")
+
+
+def _usage_store():
+    return _workbridge_store(USAGE_ROOT, "usage_store", "UsageStore", "Usage ledger")
+
+
+def _review_store():
+    return _workbridge_store(REVIEW_ROOT, "review_store", "ReviewStore", "Review history")
 
 
 def _sanitize_value(value: Any, *, depth: int = 0) -> Any:
@@ -898,6 +929,143 @@ def mutate_task(work_id: str, action: str, body: Any) -> dict[str, Any]:
         )
 
 
+def _utc_now_text() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _s4_read_models(
+    sanitized_tasks: list[dict[str, Any]],
+    planning_snapshot: dict[str, Any],
+    intake_snapshot: dict[str, Any],
+    stored_manifests: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """V1-S4 canonical read models composed from the real WorkBridge state
+    stores and their derive functions. Every key is grounded in a real source
+    (production records, planning blocks, intake identities, the usage
+    ledger, task states, or a canonical UNKNOWN). When a S4 authority is
+    unavailable the corresponding key is OMITTED — absence is honest; a
+    synthesised fact is not."""
+    workbridge = _workbridge_module()
+    review_store = getattr(workbridge, "review_store", None)
+    usage_store_mod = getattr(workbridge, "usage_store", None)
+    result: dict[str, Any] = {}
+    now = _utc_now_text()
+
+    production_records: list[dict[str, Any]] = []
+    try:
+        production_records = _production_store().list_records()
+        result["productionReviews"] = production_records
+    except WorkspaceAuthorityUnavailable:
+        production_records = []
+
+    identities: dict[str, Any] = {}
+    for task in sanitized_tasks:
+        work_id = _text_value((task.get("fields") or {}).get("WORK-ID"))
+        if work_id and task.get("sourceIdentity") is not None:
+            identities[work_id] = task["sourceIdentity"]
+    work_scopes = [scope for scope in intake_snapshot.get("workScope", []) if isinstance(scope, dict)]
+
+    if review_store is not None and hasattr(review_store, "derive_production_review_events"):
+        try:
+            task_events = _review_store().task_events()
+            derived = review_store.derive_production_review_events(production_records)
+            events = [*task_events, *derived]
+            events.sort(key=lambda event: (event.get("occurred_at") or "", event.get("event_id") or ""))
+            project_by_work: dict[str, str | None] = {}
+            for task in sanitized_tasks:
+                fields = task.get("fields") if isinstance(task.get("fields"), dict) else {}
+                work_id = _text_value(fields.get("WORK-ID"))
+                if work_id:
+                    project_by_work[work_id] = _text_value(fields.get("所属项目"))
+            for event in events:
+                event["project_id"] = project_by_work.get(event.get("work_id"))
+            result["reviewHistory"] = events
+        except WorkspaceAuthorityUnavailable:
+            pass
+
+    if review_store is not None and hasattr(review_store, "derive_ai_contribution"):
+        try:
+            contributions = review_store.derive_ai_contribution(production_records, identities)
+            for contribution in contributions:
+                contribution["assessed_at"] = now
+            result["aiContribution"] = contributions
+        except WorkspaceAuthorityUnavailable:
+            pass
+
+    if review_store is not None and hasattr(review_store, "derive_execution_timing"):
+        try:
+            result["executionTiming"] = review_store.derive_execution_timing(
+                planning_snapshot.get("scheduleBlocks", []), production_records
+            )
+        except WorkspaceAuthorityUnavailable:
+            pass
+
+    if review_store is not None and hasattr(review_store, "derive_artifact_revisions"):
+        try:
+            manifest_map = {
+                item["work_id"]: item
+                for item in (stored_manifests or [])
+                if isinstance(item, dict) and item.get("work_id")
+            }
+            result["artifactRevisions"] = review_store.derive_artifact_revisions(
+                production_records, manifest_map
+            )
+        except WorkspaceAuthorityUnavailable:
+            pass
+
+    try:
+        settings = _settings_store().read()
+        settings["work_scope_revision"] = max(
+            (int(scope.get("revision", 0)) for scope in work_scopes), default=None
+        )
+        result["systemSettings"] = settings
+    except WorkspaceAuthorityUnavailable:
+        pass
+
+    if usage_store_mod is not None and hasattr(usage_store_mod.UsageStore, "rollups"):
+        try:
+            usage = _usage_store()
+            snapshot = usage.snapshot()
+            result["usageLedger"] = snapshot["entries"]
+            result["usageLedgerTotal"] = snapshot["total_count"]
+            result["providerUsage"] = usage.rollups(now=now)
+            result["securityAlerts"] = snapshot["securityAlerts"]
+        except WorkspaceAuthorityUnavailable:
+            pass
+
+    if "usageLedger" in result:
+        # No approved pricing or billing/credit source exists: canonical empty
+        # — token count is never treated as a bill, credit is never guessed.
+        result["costAttribution"] = []
+        result["providerCredit"] = []
+
+    result["backupStatus"] = {
+        "latest_backup_at": None,
+        "state": "unknown",
+        "last_restore_test_at": None,
+        "last_restore_test_state": None,
+        "protected_components": [],
+        "last_error_code": None,
+        "checked_at": now,
+    }
+
+    if hasattr(workbridge, "derive_notifications"):
+        try:
+            result["notifications"] = workbridge.derive_notifications(
+                sanitized_tasks, intake_snapshot.get("duplicateEvidence", [])
+            )
+        except Exception:
+            log.warning("s4 notifications derivation failed", exc_info=True)
+
+    if hasattr(workbridge, "derive_source_health"):
+        try:
+            result["sourceHealth"] = workbridge.derive_source_health(work_scopes, identities, now)
+        except Exception:
+            log.warning("s4 source health derivation failed", exc_info=True)
+
+    return result
+
+
 def build_workspace_snapshot() -> dict[str, Any]:
     store = _authority_store()
     tables = _list_tables(store)
@@ -935,7 +1103,7 @@ def build_workspace_snapshot() -> dict[str, Any]:
         raw_record = records_by_work_id.get(work_id)
         task["sourceIdentity"] = identities.get(work_id)
         task["intake_revision"] = revision_fn(raw_record) if raw_record else None
-    return {
+    snapshot: dict[str, Any] = {
         "schemaVersion": SCHEMA_VERSION,
         "generatedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "projects": projects,
@@ -945,6 +1113,17 @@ def build_workspace_snapshot() -> dict[str, Any]:
         **planning,
         **intake,
     }
+    try:
+        stored_manifests = [
+            {"work_id": item["work_id"], "files": item["files"]}
+            for item in manifests
+            if isinstance(item.get("work_id"), str) and isinstance(item.get("files"), list)
+        ]
+        intake_snapshot = {"workScope": intake.get("workScope", []), "duplicateEvidence": intake.get("duplicateEvidence", [])}
+        snapshot.update(_s4_read_models(tasks, planning, intake_snapshot, stored_manifests))
+    except WorkspaceAuthorityUnavailable:
+        log.info("s4 read models partially unavailable; snapshot stays legacy-compatible")
+    return snapshot
 
 
 @router.get("/snapshot")
@@ -962,6 +1141,54 @@ def get_workspace_snapshot():
         raise HTTPException(
             status_code=502,
             detail={"code": "workspace_read_failed", "message": "Workspace data read failed"},
+        ) from exc
+
+
+@router.get("/settings")
+def get_workspace_settings():
+    """Canonical system settings read model (Control-owned store; typed
+    mutations only — there is no generic JSON patch anywhere)."""
+    try:
+        settings = _settings_store().read()
+        return {"systemSettings": settings}
+    except WorkspaceAuthorityUnavailable as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "workspace_authority_unavailable", "message": "Settings authority is unavailable"},
+        ) from exc
+    except Exception as exc:
+        settings_store_module = getattr(_workbridge_module(), "settings_store", None)
+        problem_type = getattr(settings_store_module, "SettingsProblem", None)
+        if problem_type is not None and isinstance(exc, problem_type):
+            raise HTTPException(status_code=500, detail={"code": "settings_store_corrupt", "message": "Settings store is corrupt"}) from exc
+        log.warning("workspace settings read failed type=%s", type(exc).__name__)
+        raise HTTPException(
+            status_code=502,
+            detail={"code": "settings_read_failed", "message": "Settings read failed"},
+        ) from exc
+
+
+@router.post("/settings/update")
+def update_workspace_settings(body: dict[str, Any]):
+    """Typed settings mutation: allowlisted fields, expected_revision
+    (409 stale), client_request_id idempotency, append-only settings audit."""
+    try:
+        result = _settings_store().update(body, now=datetime.now(SHANGHAI_TZ).isoformat())
+        return {"settings": result}
+    except WorkspaceAuthorityUnavailable as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "workspace_authority_unavailable", "message": "Settings authority is unavailable"},
+        ) from exc
+    except Exception as exc:
+        settings_store_module = getattr(_workbridge_module(), "settings_store", None)
+        problem_type = getattr(settings_store_module, "SettingsProblem", None)
+        if problem_type is not None and isinstance(exc, problem_type):
+            raise HTTPException(status_code=exc.status, detail={"code": exc.code, "message": exc.message}) from exc
+        log.warning("workspace settings mutation failed type=%s", type(exc).__name__)
+        raise HTTPException(
+            status_code=502,
+            detail={"code": "settings_mutation_failed", "message": "Settings update failed"},
         ) from exc
 
 

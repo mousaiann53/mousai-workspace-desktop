@@ -763,5 +763,244 @@ class MousaiWorkspaceDashboardPluginTests(unittest.TestCase):
                 self.plugin_api._secure_env_values(env_file)
 
 
+
+class FakeSettingsProblem(Exception):
+    def __init__(self, status, code, message):
+        super().__init__(message)
+        self.status = status
+        self.code = code
+        self.message = message
+
+
+class FakeSettingsStore:
+    def __init__(self, root: str) -> None:
+        self.root = root
+        self.revision = 0
+        self.values = {
+            "workday_end": "18:00",
+            "night_budget": None,
+            "budget_currency": None,
+            "timezone": "Asia/Shanghai",
+            "notification_preferences": None,
+            "work_scope_revision": None,
+            "provider_display": None,
+        }
+        self.receipts = {}
+
+    def read(self):
+        return {**self.values, "revision": self.revision}
+
+    def update(self, body, *, now):
+        receipt = self.receipts.get(body["client_request_id"])
+        if receipt is not None:
+            return {**receipt, "idempotent": True}
+        if body["expected_revision"] != self.revision:
+            raise FakeSettingsProblem(409, "stale_settings_revision", "Settings revision is stale")
+        if not set(body["changes"]).issubset(self.values):
+            raise FakeSettingsProblem(400, "invalid_settings_command", "changes must name allowlisted settings")
+        self.revision += 1
+        self.values.update(body["changes"])
+        result = {
+            "systemSettings": self.read(),
+            "settings_event": {"event_id": "SE-1", "type": "settings_updated", "occurred_at": now, "actor": body["actor"], "changes": body["changes"], "revision": self.revision},
+            "idempotent": False,
+        }
+        self.receipts[body["client_request_id"]] = result
+        return result
+
+
+class FakeUsageStore:
+    def __init__(self, root: str) -> None:
+        self.root = root
+
+    def snapshot(self):
+        return {
+            "entries": [
+                {
+                    "usage_id": "u-1",
+                    "occurred_at": "2026-09-04T10:00:00+08:00",
+                    "provider": "zhipu",
+                    "model": "glm-4.6",
+                    "agent": "workbuddy",
+                    "project_id": None,
+                    "work_id": None,
+                    "requests": 2,
+                    "input_tokens": 1000,
+                    "output_tokens": 500,
+                    "total_tokens": 1500,
+                    "source": "gateway",
+                }
+            ],
+            "total_count": 1,
+            "securityAlerts": [],
+        }
+
+    def rollups(self, *, window_days=30, now=None):
+        return [
+            {
+                "period_start": "2026-09-04T00:00:00+00:00",
+                "period_end": "2026-09-04T23:59:59+00:00",
+                "provider": "zhipu",
+                "model": "glm-4.6",
+                "agent": "workbuddy",
+                "project_id": None,
+                "work_id": None,
+                "requests": 2,
+                "tokens": 1500,
+                "value": None,
+                "currency": None,
+                "value_kind": "actual",
+            }
+        ]
+
+
+class S4ReadModelTests(unittest.TestCase):
+    """V1-S4: canonical read models enter the snapshot; legacy gateways stay
+    legacy-compatible; settings mutations stay typed and audited."""
+
+    def setUp(self):
+        self.plugin_api = load_plugin_api()
+
+    def tearDown(self):
+        sys.modules.pop("test_mousai_workspace_plugin_api", None)
+
+    def _workbridge_with_s4(self):
+        review_store = SimpleNamespace(
+            derive_production_review_events=lambda records: [],
+            derive_ai_contribution=lambda records, identities: [
+                {"work_id": "WORK-001", "state": "UNKNOWN", "evidence_refs": ["intake:WORK-001:sourceIdentity"], "assessed_by": "workbridge:s4-evidence-classifier", "assessed_at": None, "revision": 0}
+            ],
+            derive_execution_timing=lambda blocks, records: [],
+            derive_artifact_revisions=lambda records, manifests: [],
+        )
+        review_store_instance = SimpleNamespace(task_events=lambda: [])
+        production_store = SimpleNamespace(list_records=lambda: [])
+        workbridge = SimpleNamespace(
+            intake_store=SimpleNamespace(task_revision=lambda _record: "b" * 64),
+            review_store=review_store,
+            settings_store=SimpleNamespace(SettingsStore=FakeSettingsStore, SettingsProblem=FakeSettingsProblem),
+            usage_store=SimpleNamespace(UsageStore=FakeUsageStore),
+            derive_notifications=lambda tasks, duplicates: [],
+            derive_source_health=lambda scopes, identities, now: [],
+        )
+        return workbridge, review_store_instance, production_store
+
+    def test_snapshot_includes_s4_read_models(self):
+        store = FakeStore()
+        planning = FakePlanningStore()
+        intake = FakeIntakeStore()
+        workbridge, review_store_instance, production_store = self._workbridge_with_s4()
+
+        def make_review_store():
+            return review_store_instance
+
+        def make_production_store():
+            return production_store
+
+        with patch.object(self.plugin_api, "_authority_store", return_value=store), patch.object(
+            self.plugin_api, "_planning_store", return_value=planning
+        ), patch.object(self.plugin_api, "_intake_store", return_value=intake), patch.object(
+            self.plugin_api, "_workbridge_module", return_value=workbridge
+        ), patch.object(self.plugin_api, "_review_store", return_value=make_review_store()), patch.object(
+            self.plugin_api, "_production_store", return_value=make_production_store()
+        ):
+            snapshot = self.plugin_api.build_workspace_snapshot()
+
+        self.assertIn("productionReviews", snapshot)
+        self.assertIn("reviewHistory", snapshot)
+        self.assertEqual(snapshot["aiContribution"][0]["work_id"], "WORK-001")
+        self.assertIn("executionTiming", snapshot)
+        self.assertIn("artifactRevisions", snapshot)
+        self.assertEqual(snapshot["systemSettings"]["workday_end"], "18:00")
+        self.assertIsNone(snapshot["systemSettings"]["night_budget"])
+        self.assertEqual(snapshot["usageLedger"][0]["usage_id"], "u-1")
+        self.assertEqual(snapshot["usageLedgerTotal"], 1)
+        self.assertEqual(snapshot["providerUsage"][0]["value"], None)
+        self.assertEqual(snapshot["costAttribution"], [])
+        self.assertEqual(snapshot["providerCredit"], [])
+        self.assertEqual(snapshot["backupStatus"]["state"], "unknown")
+        self.assertIn("notifications", snapshot)
+        self.assertIn("sourceHealth", snapshot)
+        self.assertIsNone(snapshot["providerUsage"][0]["currency"])
+
+    def test_snapshot_stays_legacy_compatible_without_s4_authority(self):
+        store = FakeStore()
+        planning = FakePlanningStore()
+        intake = FakeIntakeStore()
+        workbridge = SimpleNamespace(intake_store=SimpleNamespace(task_revision=lambda _record: "b" * 64))
+        with patch.object(self.plugin_api, "_authority_store", return_value=store), patch.object(
+            self.plugin_api, "_planning_store", return_value=planning
+        ), patch.object(self.plugin_api, "_intake_store", return_value=intake), patch.object(
+            self.plugin_api, "_workbridge_module", return_value=workbridge
+        ):
+            snapshot = self.plugin_api.build_workspace_snapshot()
+
+        for key in ("reviewHistory", "aiContribution", "usageLedger", "systemSettings", "providerUsage"):
+            self.assertNotIn(key, snapshot)
+        self.assertEqual(snapshot["backupStatus"]["state"], "unknown")
+
+    def test_settings_endpoints_are_typed_and_audited(self):
+        app = FastAPI()
+        app.include_router(self.plugin_api.router, prefix="/api/plugins/mousai-workspace")
+        client = TestClient(app, raise_server_exceptions=False)
+        settings_store = FakeSettingsStore("/tmp/fake-settings")
+        workbridge = SimpleNamespace(settings_store=SimpleNamespace(SettingsStore=FakeSettingsStore, SettingsProblem=FakeSettingsProblem))
+
+        with patch.object(self.plugin_api, "_settings_store", return_value=settings_store), patch.object(
+            self.plugin_api, "_workbridge_module", return_value=workbridge
+        ):
+            response = client.get("/api/plugins/mousai-workspace/settings")
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()["systemSettings"]["workday_end"], "18:00")
+
+            response = client.post(
+                "/api/plugins/mousai-workspace/settings/update",
+                json={
+                    "client_request_id": "settings-test-0001",
+                    "expected_revision": 0,
+                    "actor": "Mousai",
+                    "changes": {"workday_end": "17:30"},
+                },
+            )
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()["settings"]["systemSettings"]["workday_end"], "17:30")
+
+            response = client.post(
+                "/api/plugins/mousai-workspace/settings/update",
+                json={
+                    "client_request_id": "settings-test-0001",
+                    "expected_revision": 1,
+                    "actor": "Mousai",
+                    "changes": {"workday_end": "17:30"},
+                },
+            )
+            self.assertEqual(response.status_code, 200)
+            self.assertTrue(response.json()["settings"]["idempotent"])
+
+            response = client.post(
+                "/api/plugins/mousai-workspace/settings/update",
+                json={
+                    "client_request_id": "settings-test-0002",
+                    "expected_revision": 0,
+                    "actor": "Mousai",
+                    "changes": {"workday_end": "19:00"},
+                },
+            )
+            self.assertEqual(response.status_code, 409)
+            self.assertEqual(response.json()["detail"]["code"], "stale_settings_revision")
+
+            response = client.post(
+                "/api/plugins/mousai-workspace/settings/update",
+                json={
+                    "client_request_id": "settings-test-0003",
+                    "expected_revision": 1,
+                    "actor": "Mousai",
+                    "changes": {"arbitrary_patch": True},
+                },
+            )
+            self.assertEqual(response.status_code, 400)
+
+
 if __name__ == "__main__":
+
     unittest.main()

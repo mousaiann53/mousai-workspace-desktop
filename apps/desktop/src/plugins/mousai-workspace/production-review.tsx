@@ -1,7 +1,7 @@
 import { Button } from '@hermes/plugin-sdk'
 
 import { ArtifactComparison } from './artifact-comparison'
-import type { Deliverable, ProductionGateState, ProductionReview, Task } from './domain'
+import type { ArtifactRevisionRecord, Deliverable, ProductionGateState, ProductionReview, Task } from './domain'
 import { ProductionActionPanel } from './production-actions'
 import { ProductionHistory } from './production-history'
 import type { WorkspaceProductionActionTransport } from './service-production-actions'
@@ -132,6 +132,7 @@ function ReviewFact({ label, children }: { label: string; children: string }) {
 }
 
 export function ProductionReviewCard({
+  artifactRevisions,
   item,
   focusPanel,
   focused = false,
@@ -140,6 +141,7 @@ export function ProductionReviewCard({
   onRefresh,
   transport
 }: {
+  artifactRevisions?: readonly ArtifactRevisionRecord[]
   item: ProductionReviewItem
   focusPanel?: WorkspaceFocusPanel | null
   focused?: boolean
@@ -279,7 +281,7 @@ export function ProductionReviewCard({
 
       <div className="mt-4 border-t border-(--ui-stroke-quaternary) pt-3">
         <div className="mb-2 text-[0.6875rem] text-(--ui-text-quaternary)">Artifact metadata comparison</div>
-        <ArtifactComparison item={item} />
+        <ArtifactComparison historicalRevisions={artifactRevisions} item={item} />
       </div>
 
       <div

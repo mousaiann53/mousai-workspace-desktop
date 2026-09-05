@@ -1,9 +1,15 @@
-import type { ProductionReview, Project, Task, WorkspaceSnapshot } from './domain'
+import type {
+  AiContributionState,
+  CanonicalReviewEvent,
+  ProductionReview,
+  Project,
+  Task,
+  WorkspaceSnapshot
+} from './domain'
 import { planningDateKey } from './service-planning-calendar'
 import { waitingReason } from './service-task-views'
 
 export type ReviewScope = 'month' | 'project' | 'today' | 'week'
-export type AiContributionState = 'AI_ASSISTED' | 'AI_AUTONOMOUS' | 'AI_PRIMARY' | 'HUMAN' | 'UNKNOWN'
 export type ReadinessState = 'HOLD' | 'NOT APPLICABLE' | 'NOT RUN' | 'PASS'
 
 export interface ReviewSummary {
@@ -27,7 +33,7 @@ export interface PlanActualRow {
   readonly scheduledTime: string | null
   readonly actualCompletion: string | null
   readonly estimatedDuration: string | null
-  readonly actualDuration: string | null
+  readonly actualDuration: number | null
   readonly rescheduleCount: number | null
 }
 
@@ -170,22 +176,41 @@ export function buildReviewSummary(
 
 export function buildPlanActualRows(snapshot: WorkspaceSnapshot, projectId?: string | null): readonly PlanActualRow[] {
   const project = projectId ? snapshot.projects.find(item => item.id === projectId || item.name === projectId) : null
+  // V1-S4 canonical facts: scheduled windows and actual durations come from
+  // the Control execution timing projection; reschedule counts and previous
+  // deadlines come from the canonical review history. Absent projections
+  // stay unavailable — never derived from file timestamps or updatedAt.
+  const timingByWork = new Map((snapshot.executionTiming ?? []).map(item => [item.workId, item]))
+  const historyByWork = new Map<string, CanonicalReviewEvent[]>()
+  const events = snapshot.reviewHistory ?? []
+
+  for (const event of events) {
+    const existing = historyByWork.get(event.workId) ?? []
+    existing.push(event)
+    historyByWork.set(event.workId, existing)
+  }
 
   return snapshot.tasks
     .filter(task => !project || task.projectRef === project.id || task.projectRef === project.name)
     .map(task => {
       const review = reviewFor(snapshot, task.id)
       const accepted = review?.events.findLast(event => event.state === 'ACCEPTED' && event.at) ?? null
+      const timing = timingByWork.get(task.id) ?? null
+      const taskEvents = (historyByWork.get(task.id) ?? []).filter(event => event.type === 'deadline_changed')
+      const lastChange = taskEvents.length ? taskEvents[taskEvents.length - 1] : null
+
+      const plannedDeadline =
+        lastChange && typeof lastChange.previousValue === 'string' ? lastChange.previousValue : null
 
       return {
         task,
-        plannedDeadline: null,
+        plannedDeadline,
         currentDeadline: task.deadline,
-        scheduledTime: null,
+        scheduledTime: timing?.scheduledStart ?? null,
         actualCompletion: accepted?.at ?? null,
         estimatedDuration: task.estimate,
-        actualDuration: null,
-        rescheduleCount: null
+        actualDuration: timing?.actualDurationMinutes ?? null,
+        rescheduleCount: snapshot.reviewHistory ? taskEvents.length : null
       }
     })
 }
@@ -196,8 +221,27 @@ export function buildAiContribution(
 ): readonly AiContributionItem[] {
   const project = projectId ? snapshot.projects.find(item => item.id === projectId || item.name === projectId) : null
 
-  return snapshot.tasks
-    .filter(task => !project || task.projectRef === project.id || task.projectRef === project.name)
+  const tasks = snapshot.tasks.filter(
+    task => !project || task.projectRef === project.id || task.projectRef === project.name
+  )
+
+  // Preferred path: the canonical Control projection (evidence-based, with
+  // explicit UNKNOWN semantics). The legacy client-side derivation below only
+  // runs for legacy gateways that do not supply the projection.
+  if (snapshot.aiContribution) {
+    const titles = new Map(tasks.map(task => [task.id, task.title] as const))
+
+    return snapshot.aiContribution
+      .filter(item => !project || tasks.some(task => task.id === item.workId))
+      .map(item => ({
+        workId: item.workId,
+        title: titles.get(item.workId) ?? item.workId,
+        state: item.state,
+        evidence: item.evidenceRefs
+      }))
+  }
+
+  return tasks
     .map(task => {
       const review = reviewFor(snapshot, task.id)
       const workBuddyEvents = review?.events.filter(event => event.actor && WORKBUDDY.test(event.actor.trim())) ?? []

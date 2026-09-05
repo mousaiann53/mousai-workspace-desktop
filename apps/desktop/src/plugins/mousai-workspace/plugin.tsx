@@ -14,6 +14,7 @@ import type { WorkspaceIntakeMutationTransport } from './service-intake-mutation
 import { createLocalDeliverableAccess, type LocalDeliverableAccess } from './service-local-deliverables'
 import type { WorkspacePlanningMutationTransport } from './service-planning-mutation'
 import type { WorkspaceProductionActionTransport } from './service-production-actions'
+import type { WorkspaceSettingsTransport } from './service-settings'
 import { createTaskCreateDraftStore, type TaskCreateDraftStore } from './service-task-create-draft'
 import type { WorkspaceTaskMutationTransport } from './service-task-mutation'
 import type { WorkspaceReadTransport } from './service-workspace-read'
@@ -192,7 +193,8 @@ type WorkspaceTransport = WorkspaceReadTransport &
   WorkspaceTaskMutationTransport &
   WorkspaceProductionActionTransport &
   WorkspacePlanningMutationTransport &
-  WorkspaceIntakeMutationTransport
+  WorkspaceIntakeMutationTransport &
+  WorkspaceSettingsTransport
 
 function ProjectsPage({
   localAccess,

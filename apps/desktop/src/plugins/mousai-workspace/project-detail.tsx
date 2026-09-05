@@ -367,6 +367,7 @@ export function TaskInspector({
     if (!task?.revision || !mutationTransport.archiveTask) {
       return
     }
+
     await runMutation(
       () => mutationTransport.archiveTask!(task.id, { clientRequestId: requestId(), expectedRevision: task.revision! }),
       null
@@ -377,6 +378,7 @@ export function TaskInspector({
     if (!task?.revision || !flagMode || !flagNote.trim() || !mutationTransport.flagTask) {
       return
     }
+
     await runMutation(
       () =>
         mutationTransport.flagTask!(task.id, {
@@ -923,6 +925,7 @@ export function ProjectDetail({
               <div className="space-y-3">
                 {model.productionReviewItems.map(item => (
                   <ProductionReviewCard
+                    artifactRevisions={result.data?.snapshot.artifactRevisions}
                     focused={focusWorkId === item.task.id && focusPanel !== 'task'}
                     focusPanel={focusWorkId === item.task.id ? focusPanel : null}
                     item={item}
