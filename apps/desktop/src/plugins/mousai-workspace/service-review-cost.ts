@@ -316,14 +316,14 @@ export function buildProjectReview(snapshot: WorkspaceSnapshot, project: Project
 }
 
 export const RELEASE_READINESS_FOUNDATION: readonly ReleaseReadinessItem[] = [
-  { area: 'Desktop', state: 'NOT RUN', reason: '等待正式 release acceptance evidence' },
-  { area: 'Control', state: 'NOT RUN', reason: 'Desktop snapshot 未提供 release evidence' },
+  { area: 'Desktop', state: 'NOT RUN', reason: 'V1-S4 live 面已接 canonical 契约（199 tests）；等待 Mousai 真机验收' },
+  { area: 'Control', state: 'NOT RUN', reason: 'V1-S4 control core 完成（164 tests，OpenAPI 2.2.0）；生产部署因 SSH 通道暂 HOLD' },
   { area: 'WorkBridge', state: 'NOT RUN', reason: '连接成功不等于 release PASS' },
-  { area: 'WorkBuddy', state: 'NOT RUN', reason: '需要真实 production run 与人工验收' },
+  { area: 'WorkBuddy', state: 'NOT RUN', reason: '需要真实 production run 与人工验收；M10 blind test 未执行' },
   { area: 'Projects', state: 'NOT RUN', reason: '需要 Product Owner 验收' },
-  { area: 'Deliverables', state: 'NOT RUN', reason: '仅 canonical acceptance 可判 PASS' },
-  { area: 'Skills', state: 'NOT RUN', reason: '必须真实复跑，skeleton 不计' },
-  { area: 'Security', state: 'HOLD', reason: 'canonical security alert / audit contract unavailable' },
-  { area: 'Backup', state: 'HOLD', reason: 'canonical backup status unavailable' },
-  { area: 'Contract blockers', state: 'HOLD', reason: '见 V1-S4 contract gaps' }
+  { area: 'Deliverables', state: 'NOT RUN', reason: '仅 canonical acceptance 可判 PASS；M6/M8 本地 sync metadata 未完成' },
+  { area: 'Skills', state: 'NOT RUN', reason: 'M9 候选未安装；必须真实复跑，skeleton 不计' },
+  { area: 'Security', state: 'HOLD', reason: 'canonical 告警契约已实现；部署 smoke 与真实事件证据尚未产生' },
+  { area: 'Backup', state: 'HOLD', reason: '无核准的备份/恢复系统；canonical UNKNOWN，不伪造备份成功' },
+  { area: 'Contract blockers', state: 'HOLD', reason: 'costAttribution / providerCredit 无核准来源；usage gateway patch 待做；见 V1-S4 contract reconciliation' }
 ]

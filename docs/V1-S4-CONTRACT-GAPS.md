@@ -98,3 +98,16 @@ These are minimum canonical contracts for the existing batched Workspace snapsho
 ## Existing WorkBridge task flags
 
 WorkBridge OpenAPI already owns typed `flag` (`material_missing` / `decision_required`) and `archive` endpoints. V1-S4 does not list them as missing canonical backend contracts. Desktop controls remain disabled only because the current Hermes plugin `ctx.rest` boundary does not expose those existing commands; Renderer direct WorkBridge access remains prohibited.
+
+## Reconciliation (2026-09-05, ZCode 48h build)
+
+Every gap above was classified against the current Control repo in
+`mousai-workspace/docs/V1-S4-CONTRACT-RECONCILIATION.md` (branch
+`feature/v1-s4-control-live-zcode`). Canonical implementations now exist for
+reviewHistory, aiContribution, executionTiming, artifactRevisions,
+systemSettings (typed mutations), usageLedger ingestion + providerUsage
+rollups, securityAlerts (ledger-derived), backupStatus (canonical UNKNOWN),
+notifications and sourceHealth. costAttribution and providerCredit remain
+empty by contract (NO_REAL_SOURCE). Previous-revision artifact file metadata
+before the S4 manifest history cannot be reconstructed (overwritten in
+WorkData) and stays unavailable.
