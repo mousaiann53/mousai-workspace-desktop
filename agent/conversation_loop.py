@@ -4033,6 +4033,20 @@ def run_conversation(
                     # rate, not the aggregator's, so they are added as dollars
                     # (below) rather than folded into the priced usage.
                     aggregator_usage = canonical_usage
+                    # V1-S4: emit this response's own usage to the WorkBridge
+                    # append-only ledger BEFORE the MoA fold — advisor fan-out
+                    # is attributed at its own model in moa_loop, never here.
+                    try:
+                        from agent.workbridge_usage import emit_model_usage
+
+                        emit_model_usage(
+                            provider=agent.provider,
+                            model=agent.model,
+                            usage=canonical_usage,
+                            response=response,
+                        )
+                    except Exception:  # pragma: no cover - defensive
+                        logger.debug("workbridge usage emission hook failed", exc_info=True)
                     # MoA: fold the reference (advisor) fan-out's token usage
                     # into this turn's REPORTED token counts. MoA runs advisors
                     # before the aggregator and returns only the aggregator's

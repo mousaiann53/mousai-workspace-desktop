@@ -601,6 +601,21 @@ def _run_reference(
                 )
             except Exception:  # pragma: no cover - defensive
                 usage = CanonicalUsage()
+        # V1-S4: advisor executions carry their own model/provider — emit
+        # them to the WorkBridge usage ledger here so the main loop never has
+        # to fold advisor tokens into the aggregator's attribution.
+        try:
+            from agent.workbridge_usage import emit_model_usage
+
+            emit_model_usage(
+                provider=runtime.get("provider"),
+                model=slot.get("model"),
+                usage=usage,
+                response=response,
+                agent="moa-advisor",
+            )
+        except Exception:  # pragma: no cover - defensive
+            logger.debug("workbridge advisor usage emission failed (non-fatal)", exc_info=True)
         # Price this advisor at ITS OWN model/provider rate (with correct
         # cache-read/cache-write split), not the aggregator's. This is why
         # advisor cost is summed as dollars rather than by folding tokens into

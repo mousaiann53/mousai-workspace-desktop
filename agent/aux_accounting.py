@@ -121,6 +121,21 @@ def record_aux_usage(
         except Exception:
             logger.debug("Aux usage cost estimation failed", exc_info=True)
 
+        # V1-S4: aux executions are real model traffic — emit to the
+        # WorkBridge usage ledger (best-effort, non-fatal, exactly once per
+        # response via this single chokepoint).
+        try:
+            from agent.workbridge_usage import emit_model_usage
+
+            emit_model_usage(
+                provider=provider,
+                model=model,
+                usage=usage,
+                response=response,
+            )
+        except Exception:
+            logger.debug("workbridge aux usage emission failed (non-fatal)", exc_info=True)
+
         session_db.record_auxiliary_usage(
             session_id,
             task,
