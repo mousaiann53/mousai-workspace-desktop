@@ -15,15 +15,26 @@ object is NORMALIZED — never at individual call sites:
 | MoA advisor fan-out | `agent/moa_loop.py` (advisor `normalize_usage`) | each advisor at its OWN model/provider |
 | Auxiliary tasks | `agent/aux_accounting.py::record_aux_usage` (single aux validation chokepoint) | aux response usage |
 
-The ledger itself is the shared `usage_store.UsageStore`
-(`WORKBRIDGE_USAGE_ROOT`, default `/var/lib/workagent/workbridge/usage` on the
-VPS — the same machine the Hermes gateway runs on, same `workagent` user).
-Writes go through the real WorkBridge module (`WORKBRIDGE_API_DIR`), so there
-is no second ledger, no HTTP token handling, and no scraping of logs.
+Ingestion authority (final): HTTP CANONICAL. The emitter POSTs the contract
+payload to the local trusted endpoint — `http://127.0.0.1:8766/workspace/usage/ingest`
+(`WORKBRIDGE_INGEST_URL` override) — and WorkBridge API validation +
+`UsageStore` persistence remain the sole owner of canonical ledger mutation.
+Hermes holds NO knowledge of store internals, store paths, or Control Python
+module locations. No public Internet route is involved.
 
-Failure semantics: emission is best-effort and non-fatal. When the ledger is
-unavailable (e.g. local dev machine) nothing is recorded — an absent fact,
-never a synthesised one.
+Failure semantics: emission is best-effort and non-fatal. Transport errors
+and 5xx get exactly ONE bounded retry; `409 duplicate_usage_id` counts as
+success (a delivery retry after a recorded event); other 4xx are logged
+safely and never retried. When the endpoint or credential is unavailable
+nothing is recorded — an absent fact, never a synthesised one.
+
+Credential status: `NEW_SCOPED_INGEST_CREDENTIAL_REQUIRED`. Audit result:
+`WORKBRIDGE_TOKEN` exists only in the WorkBridge service's own
+`EnvironmentFile`; the Hermes gateway process does not legitimately hold it
+(the mousai-workspace plugin explicitly never loads the bearer). Until Mousai
+authorizes an ingest-scoped credential (`WORKBRIDGE_INGEST_TOKEN`), the
+emitter stays DORMANT on hosts holding neither variable — the code path is
+live, canonical mutation is not.
 
 ## 2. Attribution discipline (F)
 
@@ -35,12 +46,19 @@ never a synthesised one.
   (`hermes_cli.profiles.get_active_profile_name()`); MoA advisors are stamped
   `moa-advisor` (plus their own model attribution).
 - `usage_id`: deterministic
-  `sha256(provider|model|response_id|input|output|cache_read|cache_write|reasoning)[:32]`.
-  A delivery retry of the same response produces the same id → the server
-  rejects the duplicate (`409 duplicate_usage_id`) → treated as success.
-  No double counting. A response without a usable id cannot be made stable;
-  it gets a unique id (rare late retry may add a second honest entry rather
-  than silently dropping tokens).
+  `sha256(provider|model|response_id|input|output)[:32]` over the LEDGER
+  token convention (input includes cache). A delivery retry of the same
+  response produces the same id → the server rejects the duplicate
+  (`409 duplicate_usage_id`) → treated as success. No double counting.
+
+  Stable-identity capability (audit of all three chokepoints — main
+  conversation, MoA advisor, aux): provider response id is the ONLY stable
+  identity that survives a delivery retry; no stable model-call/request id
+  or execution trace id exists that would not change across retries.
+  Therefore: response WITH a stable id → emitted; response WITHOUT one →
+  NOT emitted (`PARTIAL / NO_STABLE_USAGE_ID` — unknown usage is preferable
+  to duplicate authoritative usage). No prompt hash, no response-body hash,
+  no random UUID as canonical idempotency identity.
 
 ## 3. Never transported (hard boundary)
 
